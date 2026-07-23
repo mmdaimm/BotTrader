@@ -1,7 +1,7 @@
 """
 WebTraderBot FastAPI Backend Server (Railway.app Ready)
 Provides REST API services for Next.js Web Dashboard & Telegram Notifier Integration.
-Supports OKX Perpetual Swaps, Dual-Direction (LONG/SHORT) Trade Simulations, and Candlestick + Indicators API.
+Supports OKX Perpetual Swaps across 15 Veteran Crypto Instruments (Age > 5 Years).
 """
 
 from fastapi import FastAPI, Query
@@ -18,9 +18,9 @@ from src.core.indicators import TechnicalIndicators
 from src.core.quant_analyzer import QuantAnalyzer
 
 app = FastAPI(
-    title="WebTraderBot FastAPI Engine (OKX Futures Edition)",
+    title="WebTraderBot FastAPI Engine (OKX 15-Veteran Futures Portfolio)",
     description="Multi-Crypto Perpetual Futures Engine for Next.js Dashboard",
-    version="3.5.0"
+    version="4.0.0"
 )
 
 # Enable CORS for Next.js frontend (Vercel & Localhost)
@@ -32,8 +32,27 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# 15 Battle-Tested Veteran Crypto Instruments (> 5 Years Old)
+VETERAN_SYMBOLS = [
+    "BTC-USDT-SWAP",  # Bitcoin (2009)
+    "ETH-USDT-SWAP",  # Ethereum (2015)
+    "XRP-USDT-SWAP",  # XRP (2012)
+    "LTC-USDT-SWAP",  # Litecoin (2011)
+    "BCH-USDT-SWAP",  # Bitcoin Cash (2017)
+    "ADA-USDT-SWAP",  # Cardano (2017)
+    "SOL-USDT-SWAP",  # Solana (March 2020)
+    "DOGE-USDT-SWAP", # Dogecoin (2013)
+    "LINK-USDT-SWAP", # Chainlink (2017)
+    "DOT-USDT-SWAP",  # Polkadot (August 2020)
+    "ATOM-USDT-SWAP", # Cosmos (2019)
+    "ETC-USDT-SWAP",  # Ethereum Classic (2016)
+    "XLM-USDT-SWAP",  # Stellar (2014)
+    "TRX-USDT-SWAP",  # Tron (2017)
+    "AVAX-USDT-SWAP"  # Avalanche (September 2020)
+]
+
 bot = TraderBot(
-    symbols=["BTC-USDT-SWAP", "ETH-USDT-SWAP", "SOL-USDT-SWAP", "XRP-USDT-SWAP", "DOGE-USDT-SWAP"],
+    symbols=VETERAN_SYMBOLS,
     resolution="15",
     initial_capital=10000.0
 )
@@ -41,7 +60,7 @@ quant_analyzer = QuantAnalyzer()
 
 @app.get("/")
 def read_root():
-    return {"message": "🟢 OKX Futures Trading Engine Backend is Running Live!", "status": bot.bot_state}
+    return {"message": "🟢 OKX 15-Veteran Futures Trading Engine Backend is Running Live!", "status": bot.bot_state}
 
 @app.get("/api/status")
 def get_status():
@@ -108,7 +127,7 @@ def start_bot():
     """Start or Resume the Bot scanning loop."""
     bot.bot_state = "RUNNING"
     bot.risk_engine.reset_circuit_breaker()
-    return {"status": "SUCCESS", "bot_state": "RUNNING", "message": "▶️ OKX Futures Bot เริ่มทำงานเรียบร้อยแล้ว (Active)"}
+    return {"status": "SUCCESS", "bot_state": "RUNNING", "message": "▶️ OKX Futures 15-Veteran Bot เริ่มทำงานเรียบร้อยแล้ว (Active)"}
 
 @app.post("/api/pause")
 def pause_bot():
@@ -152,5 +171,5 @@ def sim_buy(symbol: str = Query("BTC-USDT-SWAP"), side: str = Query("LONG")):
 
 if __name__ == "__main__":
     import uvicorn
-    port = int(os.getenv("PORT", 8000))
+    port = int(os.getenv("PORT", 8080))
     uvicorn.run(app, host="0.0.0.0", port=port)

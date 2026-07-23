@@ -71,11 +71,30 @@ interface StatusResponse {
 
 const DEFAULT_BACKEND = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
 
+// 15 Battle-Tested Veteran Crypto Instruments (> 5 Years Old)
+const VETERAN_COINS = [
+  { sym: 'BTC-USDT-SWAP', label: 'BTC Perpetual', tag: 'BTC', est: '2009' },
+  { sym: 'ETH-USDT-SWAP', label: 'ETH Perpetual', tag: 'ETH', est: '2015' },
+  { sym: 'XRP-USDT-SWAP', label: 'XRP Perpetual', tag: 'XRP', est: '2012' },
+  { sym: 'LTC-USDT-SWAP', label: 'LTC Perpetual', tag: 'LTC', est: '2011' },
+  { sym: 'BCH-USDT-SWAP', label: 'BCH Perpetual', tag: 'BCH', est: '2017' },
+  { sym: 'ADA-USDT-SWAP', label: 'ADA Perpetual', tag: 'ADA', est: '2017' },
+  { sym: 'SOL-USDT-SWAP', label: 'SOL Perpetual', tag: 'SOL', est: '2020' },
+  { sym: 'DOGE-USDT-SWAP', label: 'DOGE Perpetual', tag: 'DOGE', est: '2013' },
+  { sym: 'LINK-USDT-SWAP', label: 'LINK Perpetual', tag: 'LINK', est: '2017' },
+  { sym: 'DOT-USDT-SWAP', label: 'DOT Perpetual', tag: 'DOT', est: '2020' },
+  { sym: 'ATOM-USDT-SWAP', label: 'ATOM Perpetual', tag: 'ATOM', est: '2019' },
+  { sym: 'ETC-USDT-SWAP', label: 'ETC Perpetual', tag: 'ETC', est: '2016' },
+  { sym: 'XLM-USDT-SWAP', label: 'XLM Perpetual', tag: 'XLM', est: '2014' },
+  { sym: 'TRX-USDT-SWAP', label: 'TRX Perpetual', tag: 'TRX', est: '2017' },
+  { sym: 'AVAX-USDT-SWAP', label: 'AVAX Perpetual', tag: 'AVAX', est: '2020' },
+];
+
 export default function Dashboard() {
   const [backendUrl, setBackendUrl] = useState<string>(DEFAULT_BACKEND);
   const [data, setData] = useState<StatusResponse | null>(null);
   const [logs, setLogs] = useState<string[]>([
-    'Initializing Next.js OKX Futures Dashboard...',
+    'Initializing Next.js OKX 15-Veteran Futures Portfolio...',
     `Target Backend: ${DEFAULT_BACKEND}`
   ]);
   const [tradingMode, setTradingMode] = useState<string>('PAPER');
@@ -86,7 +105,7 @@ export default function Dashboard() {
   const [candles, setCandles] = useState<CandleData[]>([]);
 
   // Feed Log Coin Filter State (User can toggle which coins to view in log)
-  const [selectedLogCoins, setSelectedLogCoins] = useState<string[]>(['BTC', 'ETH', 'DOGE']);
+  const [selectedLogCoins, setSelectedLogCoins] = useState<string[]>(['BTC', 'ETH', 'SOL', 'DOGE', 'LINK']);
 
   const toggleLogCoin = (coinTag: string) => {
     if (selectedLogCoins.includes(coinTag)) {
@@ -96,6 +115,14 @@ export default function Dashboard() {
     } else {
       setSelectedLogCoins([...selectedLogCoins, coinTag]);
     }
+  };
+
+  const selectAllLogCoins = () => {
+    setSelectedLogCoins(VETERAN_COINS.map(c => c.tag));
+  };
+
+  const selectTop5LogCoins = () => {
+    setSelectedLogCoins(['BTC', 'ETH', 'SOL', 'DOGE', 'LINK']);
   };
 
   const fetchStatus = async () => {
@@ -120,19 +147,14 @@ export default function Dashboard() {
 
       // Dynamic Terminal Log Formatting based on user's selectedLogCoins
       const coinLogParts: string[] = [];
-      const coinMap: Record<string, string> = {
-        'BTC': 'BTC-USDT-SWAP',
-        'ETH': 'ETH-USDT-SWAP',
-        'SOL': 'SOL-USDT-SWAP',
-        'XRP': 'XRP-USDT-SWAP',
-        'DOGE': 'DOGE-USDT-SWAP'
-      };
 
       selectedLogCoins.forEach((tag) => {
-        const sym = coinMap[tag];
-        const p = pr[sym]?.last_price;
-        if (p !== undefined && p !== null) {
-          coinLogParts.push(`${tag}=$${p.toLocaleString()}`);
+        const coinObj = VETERAN_COINS.find(c => c.tag === tag);
+        if (coinObj) {
+          const p = pr[coinObj.sym]?.last_price;
+          if (p !== undefined && p !== null) {
+            coinLogParts.push(`${tag}=$${p.toLocaleString()}`);
+          }
         }
       });
 
@@ -227,7 +249,7 @@ export default function Dashboard() {
   let statusBg = 'rgba(0, 240, 144, 0.1)';
   let statusBorder = '1px solid rgba(0, 240, 144, 0.2)';
   let statusColor = '#00f090';
-  let statusLabel = '🟢 OKX FUTURES BOT RUNNING';
+  let statusLabel = '🟢 OKX 15-VETERAN BOT RUNNING';
 
   if (botState === 'PAUSED') {
     statusBg = 'rgba(245, 158, 11, 0.1)';
@@ -275,7 +297,7 @@ export default function Dashboard() {
             O
           </div>
           <div>
-            <h1 style={{ fontSize: '20px', fontWeight: '700', margin: 0 }}>WebTraderBot — Custom Log Filters & Indicators</h1>
+            <h1 style={{ fontSize: '20px', fontWeight: '700', margin: 0 }}>WebTraderBot — 15 Veteran Crypto Portfolio (&gt; 5 Years Old)</h1>
             <p style={{ fontSize: '12px', color: '#9ca3af', margin: 0 }}>OKX Perpetual Swaps (EMA 200, EMA 9, EMA 21, VWAP, ADX, Volume)</p>
           </div>
         </div>
@@ -359,20 +381,14 @@ export default function Dashboard() {
         </div>
       </header>
 
-      {/* OKX Perpetual Swap Instrument Cards */}
+      {/* 15 OKX Perpetual Swap Instrument Cards (Veteran Coins > 5 Years) */}
       <div style={{
         display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))',
-        gap: '16px',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+        gap: '12px',
         marginBottom: '24px'
       }}>
-        {[
-          { sym: 'BTC-USDT-SWAP', label: 'BTC Perpetual', tag: 'BTC' },
-          { sym: 'ETH-USDT-SWAP', label: 'ETH Perpetual', tag: 'ETH' },
-          { sym: 'SOL-USDT-SWAP', label: 'SOL Perpetual', tag: 'SOL' },
-          { sym: 'XRP-USDT-SWAP', label: 'XRP Perpetual', tag: 'XRP' },
-          { sym: 'DOGE-USDT-SWAP', label: 'DOGE Perpetual', tag: 'DOGE' },
-        ].map((coin) => {
+        {VETERAN_COINS.map((coin) => {
           const item = pairs[coin.sym];
           const price = item?.last_price;
           const sig = item?.eval?.signal || 'NONE';
@@ -384,23 +400,23 @@ export default function Dashboard() {
                 background: isSelected ? 'rgba(59, 130, 246, 0.15)' : 'rgba(18, 24, 38, 0.75)',
                 backdropFilter: 'blur(12px)',
                 border: isSelected ? '2px solid #3b82f6' : '1px solid rgba(255, 255, 255, 0.08)',
-                borderRadius: '16px',
-                padding: '16px',
+                borderRadius: '14px',
+                padding: '12px',
                 cursor: 'pointer',
                 transition: 'all 0.2s ease'
               }}
             >
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', fontSize: '11px', color: '#9ca3af' }}>
-                <span style={{ fontWeight: '700', color: isSelected ? '#3b82f6' : '#9ca3af' }}>{coin.label}</span>
-                <div style={{ display: 'flex', gap: '4px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px', fontSize: '11px', color: '#9ca3af' }}>
+                <span style={{ fontWeight: '700', color: isSelected ? '#3b82f6' : '#9ca3af' }}>{coin.tag} ({coin.est})</span>
+                <div style={{ display: 'flex', gap: '3px' }}>
                   <button onClick={(e) => { e.stopPropagation(); simTrade(coin.sym, 'LONG'); }} style={{
                     background: '#00f090',
                     color: '#000',
                     border: 'none',
-                    padding: '2px 6px',
+                    padding: '2px 5px',
                     borderRadius: '4px',
                     fontWeight: '700',
-                    fontSize: '10px',
+                    fontSize: '9px',
                     cursor: 'pointer'
                   }}>
                     + LONG
@@ -409,21 +425,21 @@ export default function Dashboard() {
                     background: '#ff3b69',
                     color: '#fff',
                     border: 'none',
-                    padding: '2px 6px',
+                    padding: '2px 5px',
                     borderRadius: '4px',
                     fontWeight: '700',
-                    fontSize: '10px',
+                    fontSize: '9px',
                     cursor: 'pointer'
                   }}>
                     - SHORT
                   </button>
                 </div>
               </div>
-              <div style={{ fontSize: '18px', fontWeight: '700', fontFamily: 'monospace', marginBottom: '4px' }}>
+              <div style={{ fontSize: '16px', fontWeight: '700', fontFamily: 'monospace', marginBottom: '3px' }}>
                 {price ? `$${price.toLocaleString(undefined, { minimumFractionDigits: 2 })}` : '$0.00'}
               </div>
               <div style={{
-                fontSize: '11px',
+                fontSize: '10px',
                 fontWeight: '600',
                 color: sig.includes('BUY') ? '#00f090' : (sig.includes('SELL') ? '#ff3b69' : '#9ca3af')
               }}>
@@ -484,34 +500,53 @@ export default function Dashboard() {
           padding: '20px'
         }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              <span style={{ fontWeight: '600', fontSize: '14px' }}>📡 Terminal Feed Log</span>
-              
-              {/* Coin Log Filter Selectors */}
-              <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
-                <span style={{ fontSize: '11px', color: '#9ca3af', marginRight: '4px' }}>Log Coins:</span>
-                {['BTC', 'ETH', 'SOL', 'XRP', 'DOGE'].map((coin) => {
-                  const isChecked = selectedLogCoins.includes(coin);
-                  return (
-                    <button
-                      key={coin}
-                      onClick={() => toggleLogCoin(coin)}
-                      style={{
-                        background: isChecked ? '#3b82f6' : 'rgba(255, 255, 255, 0.05)',
-                        color: isChecked ? '#ffffff' : '#6b7280',
-                        border: '1px solid rgba(255, 255, 255, 0.1)',
-                        borderRadius: '4px',
-                        padding: '2px 6px',
-                        fontSize: '10px',
-                        fontWeight: '700',
-                        cursor: 'pointer'
-                      }}
-                    >
-                      {isChecked ? `✓ ${coin}` : coin}
-                    </button>
-                  );
-                })}
-              </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+              <span style={{ fontWeight: '600', fontSize: '14px' }}>📡 Terminal Log Filters:</span>
+              <button onClick={selectAllLogCoins} style={{
+                background: 'rgba(59, 130, 246, 0.2)',
+                border: '1px solid #3b82f6',
+                color: '#3b82f6',
+                borderRadius: '4px',
+                padding: '2px 6px',
+                fontSize: '10px',
+                fontWeight: '700',
+                cursor: 'pointer'
+              }}>
+                All 15
+              </button>
+              <button onClick={selectTop5LogCoins} style={{
+                background: 'rgba(0, 240, 144, 0.2)',
+                border: '1px solid #00f090',
+                color: '#00f090',
+                borderRadius: '4px',
+                padding: '2px 6px',
+                fontSize: '10px',
+                fontWeight: '700',
+                cursor: 'pointer'
+              }}>
+                Top 5
+              </button>
+              {VETERAN_COINS.map((coin) => {
+                const isChecked = selectedLogCoins.includes(coin.tag);
+                return (
+                  <button
+                    key={coin.tag}
+                    onClick={() => toggleLogCoin(coin.tag)}
+                    style={{
+                      background: isChecked ? '#3b82f6' : 'rgba(255, 255, 255, 0.05)',
+                      color: isChecked ? '#ffffff' : '#6b7280',
+                      border: '1px solid rgba(255, 255, 255, 0.1)',
+                      borderRadius: '4px',
+                      padding: '2px 5px',
+                      fontSize: '10px',
+                      fontWeight: '700',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    {isChecked ? `✓ ${coin.tag}` : coin.tag}
+                  </button>
+                );
+              })}
             </div>
 
             <button onClick={() => { fetchStatus(); fetchCandles(); }} style={{
