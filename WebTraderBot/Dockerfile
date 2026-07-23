@@ -12,8 +12,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy full application code
+# Copy application code
 COPY . .
 
-# Start FastAPI Uvicorn Server using dynamic $PORT assigned by Railway
-CMD uvicorn backend.app:app --host 0.0.0.0 --port ${PORT:-8000}
+# Start FastAPI Engine using Python runner
+CMD ["python", "backend/app.py"]
