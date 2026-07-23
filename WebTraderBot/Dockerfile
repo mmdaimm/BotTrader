@@ -16,8 +16,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # Expose default port
-ENV PORT=8000
 EXPOSE 8000
 
-# Start FastAPI Uvicorn Server
-CMD uvicorn backend.app:app --host 0.0.0.0 --port $PORT
+# Start FastAPI Uvicorn Server using POSIX shell variable expansion for $PORT
+CMD ["sh", "-c", "uvicorn backend.app:app --host 0.0.0.0 --port ${PORT:-8000}"]

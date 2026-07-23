@@ -68,17 +68,33 @@ interface StatusResponse {
   reason?: string;
 }
 
+const DEFAULT_BACKEND = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
+
 export default function Dashboard() {
+  const [backendUrl, setBackendUrl] = useState<string>(DEFAULT_BACKEND);
   const [data, setData] = useState<StatusResponse | null>(null);
   const [logs, setLogs] = useState<string[]>([
     'Initializing Next.js OKX Futures Dashboard...',
-    'Connecting to FastAPI Backend Engine (http://localhost:8000)...'
+    `Target Backend: ${DEFAULT_BACKEND}`
   ]);
   const [tradingMode, setTradingMode] = useState<string>('PAPER');
 
   const fetchStatus = async () => {
     try {
-      const res = await fetch('http://localhost:8000/api/status');
+      // Primary attempt
+      let res = await fetch(`${backendUrl}/api/status`).catch(() => null);
+      
+      // Automatic fallback if localhost is offline
+      if (!res && backendUrl === 'http://localhost:8000') {
+        const railwayUrl = process.env.NEXT_PUBLIC_RAILWAY_URL;
+        if (railwayUrl) {
+          res = await fetch(`${railwayUrl}/api/status`).catch(() => null);
+          if (res) setBackendUrl(railwayUrl);
+        }
+      }
+
+      if (!res) return;
+
       const result: StatusResponse = await res.json();
       setData(result);
       if (result.trading_mode) setTradingMode(result.trading_mode);
@@ -105,17 +121,17 @@ export default function Dashboard() {
     fetchStatus();
     const interval = setInterval(fetchStatus, 5000);
     return () => clearInterval(interval);
-  }, []);
+  }, [backendUrl]);
 
   const startBot = async () => {
-    const res = await fetch('http://localhost:8000/api/start', { method: 'POST' });
+    const res = await fetch(`${backendUrl}/api/start`, { method: 'POST' });
     const resData = await res.json();
     alert(resData.message);
     fetchStatus();
   };
 
   const pauseBot = async () => {
-    const res = await fetch('http://localhost:8000/api/pause', { method: 'POST' });
+    const res = await fetch(`${backendUrl}/api/pause`, { method: 'POST' });
     const resData = await res.json();
     alert(resData.message);
     fetchStatus();
@@ -124,7 +140,7 @@ export default function Dashboard() {
   const triggerPanic = async () => {
     if (confirm('🚨 EMERGENCY PANIC STOP:\nคุณต้องการยกเลิกออเดอร์ทั้งหมด และหยุด Bot ทันทีหรือไม่?')) {
       try {
-        const res = await fetch('http://localhost:8000/api/panic', { method: 'POST' });
+        const res = await fetch(`${backendUrl}/api/panic`, { method: 'POST' });
         const resData = await res.json();
         alert(resData.message);
         fetchStatus();
@@ -134,22 +150,15 @@ export default function Dashboard() {
     }
   };
 
-  const resetSystem = async () => {
-    const res = await fetch('http://localhost:8000/api/reset', { method: 'POST' });
-    const resData = await res.json();
-    alert(resData.message);
-    fetchStatus();
-  };
-
   const toggleMode = async () => {
-    const res = await fetch('http://localhost:8000/api/toggle-mode', { method: 'POST' });
+    const res = await fetch(`${backendUrl}/api/toggle-mode`, { method: 'POST' });
     const resData = await res.json();
     setTradingMode(resData.mode);
     alert(`Switched to: ${resData.mode} TRADING MODE`);
   };
 
   const simTrade = async (symbol: string, side: string) => {
-    const res = await fetch(`http://localhost:8000/api/sim-buy?symbol=${symbol}&side=${side}`, { method: 'POST' });
+    const res = await fetch(`${backendUrl}/api/sim-buy?symbol=${symbol}&side=${side}`, { method: 'POST' });
     const resData = await res.json();
     alert(resData.message);
     fetchStatus();
@@ -212,7 +221,7 @@ export default function Dashboard() {
           </div>
           <div>
             <h1 style={{ fontSize: '20px', fontWeight: '700', margin: 0 }}>WebTraderBot — OKX Futures Edition</h1>
-            <p style={{ fontSize: '12px', color: '#9ca3af', margin: 0 }}>OKX v5 Perpetual Swaps (LONG & SHORT 3x Leverage)</p>
+            <p style={{ fontSize: '12px', color: '#9ca3af', margin: 0 }}>Connected to: {backendUrl}</p>
           </div>
         </div>
 
