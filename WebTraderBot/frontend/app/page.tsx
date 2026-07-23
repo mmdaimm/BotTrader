@@ -85,6 +85,19 @@ export default function Dashboard() {
   const [chartResolution, setChartResolution] = useState<string>('15');
   const [candles, setCandles] = useState<CandleData[]>([]);
 
+  // Feed Log Coin Filter State (User can toggle which coins to view in log)
+  const [selectedLogCoins, setSelectedLogCoins] = useState<string[]>(['BTC', 'ETH', 'DOGE']);
+
+  const toggleLogCoin = (coinTag: string) => {
+    if (selectedLogCoins.includes(coinTag)) {
+      if (selectedLogCoins.length > 1) {
+        setSelectedLogCoins(selectedLogCoins.filter((c) => c !== coinTag));
+      }
+    } else {
+      setSelectedLogCoins([...selectedLogCoins, coinTag]);
+    }
+  };
+
   const fetchStatus = async () => {
     try {
       let res = await fetch(`${backendUrl}/api/status`).catch(() => null);
@@ -103,14 +116,30 @@ export default function Dashboard() {
       if (result.trading_mode) setTradingMode(result.trading_mode);
 
       const now = new Date().toLocaleTimeString();
-      const btcPrice = result.pair_results?.['BTC-USDT-SWAP']?.last_price;
-      const ethPrice = result.pair_results?.['ETH-USDT-SWAP']?.last_price;
-      const solPrice = result.pair_results?.['SOL-USDT-SWAP']?.last_price;
+      const pr = result.pair_results || {};
 
-      if (btcPrice) {
+      // Dynamic Terminal Log Formatting based on user's selectedLogCoins
+      const coinLogParts: string[] = [];
+      const coinMap: Record<string, string> = {
+        'BTC': 'BTC-USDT-SWAP',
+        'ETH': 'ETH-USDT-SWAP',
+        'SOL': 'SOL-USDT-SWAP',
+        'XRP': 'XRP-USDT-SWAP',
+        'DOGE': 'DOGE-USDT-SWAP'
+      };
+
+      selectedLogCoins.forEach((tag) => {
+        const sym = coinMap[tag];
+        const p = pr[sym]?.last_price;
+        if (p !== undefined && p !== null) {
+          coinLogParts.push(`${tag}=$${p.toLocaleString()}`);
+        }
+      });
+
+      if (coinLogParts.length > 0) {
         setLogs((prev) => [
-          ...prev.slice(-15),
-          `[${now}] State: ${result.bot_state || result.status} | BTC=$${btcPrice?.toLocaleString()} | ETH=$${ethPrice?.toLocaleString()} | SOL=$${solPrice?.toLocaleString()}`
+          ...prev.slice(-18),
+          `[${now}] State: ${result.bot_state || result.status} | ${coinLogParts.join(' | ')}`
         ]);
       }
     } catch (err) {
@@ -138,7 +167,7 @@ export default function Dashboard() {
       fetchCandles();
     }, 5000);
     return () => clearInterval(interval);
-  }, [backendUrl, chartSymbol, chartResolution]);
+  }, [backendUrl, chartSymbol, chartResolution, selectedLogCoins]);
 
   const startBot = async () => {
     const res = await fetch(`${backendUrl}/api/start`, { method: 'POST' });
@@ -238,7 +267,7 @@ export default function Dashboard() {
             O
           </div>
           <div>
-            <h1 style={{ fontSize: '20px', fontWeight: '700', margin: 0 }}>WebTraderBot — Interactive Candlesticks & Indicators</h1>
+            <h1 style={{ fontSize: '20px', fontWeight: '700', margin: 0 }}>WebTraderBot — Custom Log Filters & Indicators</h1>
             <p style={{ fontSize: '12px', color: '#9ca3af', margin: 0 }}>OKX Perpetual Swaps (EMA 200, EMA 9, EMA 21, VWAP, ADX, Volume)</p>
           </div>
         </div>
@@ -446,8 +475,37 @@ export default function Dashboard() {
           borderRadius: '16px',
           padding: '20px'
         }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-            <span style={{ fontWeight: '600', fontSize: '14px' }}>📡 OKX Perpetual Feed (Dual LONG & SHORT)</span>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <span style={{ fontWeight: '600', fontSize: '14px' }}>📡 Terminal Feed Log</span>
+              
+              {/* Coin Log Filter Selectors */}
+              <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+                <span style={{ fontSize: '11px', color: '#9ca3af', marginRight: '4px' }}>Log Coins:</span>
+                {['BTC', 'ETH', 'SOL', 'XRP', 'DOGE'].map((coin) => {
+                  const isChecked = selectedLogCoins.includes(coin);
+                  return (
+                    <button
+                      key={coin}
+                      onClick={() => toggleLogCoin(coin)}
+                      style={{
+                        background: isChecked ? '#3b82f6' : 'rgba(255, 255, 255, 0.05)',
+                        color: isChecked ? '#ffffff' : '#6b7280',
+                        border: '1px solid rgba(255, 255, 255, 0.1)',
+                        borderRadius: '4px',
+                        padding: '2px 6px',
+                        fontSize: '10px',
+                        fontWeight: '700',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      {isChecked ? `✓ ${coin}` : coin}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
             <button onClick={() => { fetchStatus(); fetchCandles(); }} style={{
               background: 'transparent',
               border: '1px solid rgba(255, 255, 255, 0.1)',
