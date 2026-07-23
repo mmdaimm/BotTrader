@@ -29,20 +29,39 @@ export default function CandlestickChart({ candles, symbol, resolution }: Candle
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
   const [mousePos, setMousePos] = useState<{ x: number; y: number } | null>(null);
+  const [dimensions, setDimensions] = useState<{ width: number; height: number }>({ width: 600, height: 440 });
+
+  // Dedicated ResizeObserver to handle container size changes cleanly without triggering size shifts on hover
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const resizeObserver = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        if (entry.contentRect.width > 0) {
+          setDimensions({
+            width: Math.floor(entry.contentRect.width),
+            height: 440
+          });
+        }
+      }
+    });
+
+    resizeObserver.observe(container);
+    return () => resizeObserver.disconnect();
+  }, []);
 
   useEffect(() => {
     const canvas = canvasRef.current;
-    const container = containerRef.current;
-    if (!canvas || !container || !candles || candles.length === 0) return;
+    if (!canvas || !candles || candles.length === 0 || dimensions.width === 0) return;
 
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    // High-DPR Crisp Canvas Setup
-    const rect = container.getBoundingClientRect();
+    // Fixed High-DPR Crisp Canvas Setup using dimensions state
     const dpr = window.devicePixelRatio || 1;
-    const width = rect.width;
-    const height = 480;
+    const width = dimensions.width;
+    const height = dimensions.height;
 
     canvas.width = width * dpr;
     canvas.height = height * dpr;
@@ -52,13 +71,13 @@ export default function CandlestickChart({ candles, symbol, resolution }: Candle
     ctx.scale(dpr, dpr);
 
     // Layout Dimensions
-    const paddingRight = 65;
+    const paddingRight = 60;
     const paddingTop = 30;
-    const chartHeight = 260; // Main Candlestick Panel
-    const volTop = 300;
-    const volHeight = 70;    // Volume Sub-panel
-    const adxTop = 385;
-    const adxHeight = 75;    // ADX Sub-panel
+    const chartHeight = 230; // Main Candlestick Panel
+    const volTop = 275;
+    const volHeight = 65;    // Volume Sub-panel
+    const adxTop = 355;
+    const adxHeight = 65;    // ADX Sub-panel
 
     const chartWidth = width - paddingRight;
 
@@ -98,7 +117,7 @@ export default function CandlestickChart({ candles, symbol, resolution }: Candle
     ctx.fillStyle = '#9ca3af';
     ctx.font = '10px monospace';
 
-    const priceSteps = 5;
+    const priceSteps = 4;
     for (let i = 0; i <= priceSteps; i++) {
       const p = minPrice + (priceRange / priceSteps) * i;
       const y = getPriceY(p);
@@ -107,22 +126,22 @@ export default function CandlestickChart({ candles, symbol, resolution }: Candle
       ctx.lineTo(chartWidth, y);
       ctx.stroke();
 
-      ctx.fillText(p.toLocaleString(undefined, { minimumFractionDigits: 2 }), chartWidth + 5, y + 3);
+      ctx.fillText(p.toLocaleString(undefined, { minimumFractionDigits: 2 }), chartWidth + 4, y + 3);
     }
 
     // Sub-Panel Separator Lines & Thresholds
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
     ctx.beginPath();
-    ctx.moveTo(0, volTop - 10);
-    ctx.lineTo(width, volTop - 10);
-    ctx.moveTo(0, adxTop - 10);
-    ctx.lineTo(width, adxTop - 10);
+    ctx.moveTo(0, volTop - 8);
+    ctx.lineTo(width, volTop - 8);
+    ctx.moveTo(0, adxTop - 8);
+    ctx.lineTo(width, adxTop - 8);
     ctx.stroke();
 
     // Sub-panel Labels
     ctx.fillStyle = '#9ca3af';
-    ctx.fillText('Volume & Vol SMA (20)', 10, volTop - 2);
-    ctx.fillText('ADX (14) Trend Strength (>20)', 10, adxTop - 2);
+    ctx.fillText('Volume & Vol SMA (20)', 8, volTop - 2);
+    ctx.fillText('ADX (14) Trend Strength (>20)', 8, adxTop - 2);
 
     // ADX Threshold Line (20 Level)
     const adx20Y = getAdxY(20);
@@ -134,7 +153,7 @@ export default function CandlestickChart({ candles, symbol, resolution }: Candle
     ctx.stroke();
     ctx.setLineDash([]);
     ctx.fillStyle = '#ef4444';
-    ctx.fillText('20', chartWidth + 5, adx20Y + 3);
+    ctx.fillText('20', chartWidth + 4, adx20Y + 3);
 
     // Render Volume Bars
     visibleCandles.forEach((c, idx) => {
@@ -206,7 +225,6 @@ export default function CandlestickChart({ candles, symbol, resolution }: Candle
 
     // Render Interactive Crosshair & Tooltip if Hovering
     if (hoverIndex !== null && hoverIndex >= 0 && hoverIndex < visibleCandles.length && mousePos) {
-      const hovered = visibleCandles[hoverIndex];
       const x = hoverIndex * candleWidth + candleWidth / 2;
 
       // Draw Vertical & Horizontal Crosshair Lines
@@ -222,12 +240,12 @@ export default function CandlestickChart({ candles, symbol, resolution }: Candle
     }
 
     // Chart Legend Header
-    ctx.font = '700 11px monospace';
-    let legendX = 10;
+    ctx.font = '700 10px monospace';
+    let legendX = 8;
     const drawLegend = (text: string, color: string) => {
       ctx.fillStyle = color;
-      ctx.fillText(text, legendX, 18);
-      legendX += ctx.measureText(text).width + 14;
+      ctx.fillText(text, legendX, 16);
+      legendX += ctx.measureText(text).width + 10;
     };
 
     const lastCandle = visibleCandles[visibleCandles.length - 1];
@@ -243,7 +261,7 @@ export default function CandlestickChart({ candles, symbol, resolution }: Candle
       drawLegend(`VWAP:${lastCandle.vwap || '-'}`, '#38bdf8');
       drawLegend(`ADX:${lastCandle.adx || '-'}`, '#ef4444');
     }
-  }, [candles, symbol, resolution, hoverIndex, mousePos]);
+  }, [candles, symbol, resolution, hoverIndex, mousePos, dimensions]);
 
   const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current;
@@ -253,7 +271,7 @@ export default function CandlestickChart({ candles, symbol, resolution }: Candle
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
 
-    const paddingRight = 65;
+    const paddingRight = 60;
     const chartWidth = rect.width - paddingRight;
 
     const visibleCount = Math.min(60, candles.length);
@@ -277,6 +295,7 @@ export default function CandlestickChart({ candles, symbol, resolution }: Candle
   return (
     <div ref={containerRef} style={{
       width: '100%',
+      boxSizing: 'border-box',
       background: 'rgba(11, 14, 23, 0.9)',
       backdropFilter: 'blur(12px)',
       border: '1px solid rgba(255, 255, 255, 0.08)',
@@ -288,7 +307,7 @@ export default function CandlestickChart({ candles, symbol, resolution }: Candle
         ref={canvasRef}
         onMouseMove={handleMouseMove}
         onMouseLeave={handleMouseLeave}
-        style={{ display: 'block', cursor: 'crosshair' }}
+        style={{ display: 'block', cursor: 'crosshair', width: '100%' }}
       />
     </div>
   );
