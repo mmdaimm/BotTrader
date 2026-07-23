@@ -149,10 +149,18 @@ export default function Dashboard() {
 
   const fetchCandles = async () => {
     try {
-      const res = await fetch(`${backendUrl}/api/candles?symbol=${chartSymbol}&resolution=${chartResolution}`);
-      const result = await res.json();
-      if (result.candles) {
-        setCandles(result.candles);
+      let res = await fetch(`${backendUrl}/api/candles?symbol=${chartSymbol}&resolution=${chartResolution}`).catch(() => null);
+      
+      // Fallback to local backend if railway backend returns 404 during rebuild
+      if ((!res || res.status === 404) && backendUrl !== 'http://localhost:8000') {
+        res = await fetch(`http://localhost:8000/api/candles?symbol=${chartSymbol}&resolution=${chartResolution}`).catch(() => null);
+      }
+
+      if (res && res.ok) {
+        const result = await res.json();
+        if (result.candles && result.candles.length > 0) {
+          setCandles(result.candles);
+        }
       }
     } catch (err) {
       console.error('Error fetching candles data:', err);
