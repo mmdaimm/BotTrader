@@ -173,7 +173,6 @@ export default function Dashboard() {
     try {
       let res = await fetch(`${backendUrl}/api/candles?symbol=${chartSymbol}&resolution=${chartResolution}`).catch(() => null);
       
-      // Fallback to local backend if railway backend returns 404 during rebuild
       if ((!res || res.status === 404) && backendUrl !== 'http://localhost:8000') {
         res = await fetch(`http://localhost:8000/api/candles?symbol=${chartSymbol}&resolution=${chartResolution}`).catch(() => null);
       }
@@ -297,7 +296,7 @@ export default function Dashboard() {
             O
           </div>
           <div>
-            <h1 style={{ fontSize: '20px', fontWeight: '700', margin: 0 }}>WebTraderBot — 15 Veteran Crypto Portfolio (&gt; 5 Years Old)</h1>
+            <h1 style={{ fontSize: '20px', fontWeight: '700', margin: 0 }}>WebTraderBot — Pro Trading Terminal Layout</h1>
             <p style={{ fontSize: '12px', color: '#9ca3af', margin: 0 }}>OKX Perpetual Swaps (EMA 200, EMA 9, EMA 21, VWAP, ADX, Volume)</p>
           </div>
         </div>
@@ -450,65 +449,89 @@ export default function Dashboard() {
         })}
       </div>
 
-      {/* Interactive Candlestick Chart Section */}
-      <div style={{ marginBottom: '24px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <h2 style={{ fontSize: '15px', fontWeight: '700', margin: 0 }}>📊 Live Candlestick & Multi-Indicator Chart ({chartSymbol})</h2>
-            <div style={{ display: 'flex', gap: '6px' }}>
-              {['5', '15', '60'].map((tf) => (
-                <button
-                  key={tf}
-                  onClick={() => setChartResolution(tf)}
-                  style={{
-                    background: chartResolution === tf ? '#3b82f6' : 'rgba(255, 255, 255, 0.05)',
-                    border: '1px solid rgba(255, 255, 255, 0.1)',
-                    color: chartResolution === tf ? '#fff' : '#9ca3af',
-                    padding: '3px 8px',
-                    borderRadius: '6px',
-                    fontSize: '11px',
-                    fontWeight: '700',
-                    cursor: 'pointer'
-                  }}
-                >
-                  {tf === '60' ? '1h' : `${tf}m`}
-                </button>
-              ))}
+      {/* Side-By-Side Row: Interactive Candlestick Chart (Left 3fr) + Terminal Feed Log (Right 2fr) */}
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: '3fr 2fr',
+        gap: '20px',
+        marginBottom: '24px'
+      }}>
+        {/* Left Box: Interactive Candlestick Chart */}
+        <div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <h2 style={{ fontSize: '14px', fontWeight: '700', margin: 0 }}>📊 Candlestick & Indicators Chart ({chartSymbol})</h2>
+              <div style={{ display: 'flex', gap: '4px' }}>
+                {['5', '15', '60'].map((tf) => (
+                  <button
+                    key={tf}
+                    onClick={() => setChartResolution(tf)}
+                    style={{
+                      background: chartResolution === tf ? '#3b82f6' : 'rgba(255, 255, 255, 0.05)',
+                      border: '1px solid rgba(255, 255, 255, 0.1)',
+                      color: chartResolution === tf ? '#fff' : '#9ca3af',
+                      padding: '2px 6px',
+                      borderRadius: '4px',
+                      fontSize: '10px',
+                      fontWeight: '700',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    {tf === '60' ? '1h' : `${tf}m`}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: '8px', fontSize: '10px', fontWeight: '600' }}>
+              <span style={{ color: '#a855f7' }}>🟪 EMA 200</span>
+              <span style={{ color: '#3b82f6' }}>🔷 EMA 9</span>
+              <span style={{ color: '#f97316' }}>🍊 EMA 21</span>
+              <span style={{ color: '#38bdf8' }}>🩵 VWAP</span>
+              <span style={{ color: '#ef4444' }}>🔴 ADX (14)</span>
             </div>
           </div>
 
-          <div style={{ display: 'flex', gap: '12px', fontSize: '11px', fontWeight: '600' }}>
-            <span style={{ color: '#a855f7' }}>🟪 EMA 200</span>
-            <span style={{ color: '#3b82f6' }}>🔷 EMA 9</span>
-            <span style={{ color: '#f97316' }}>🍊 EMA 21</span>
-            <span style={{ color: '#38bdf8' }}>🩵 VWAP</span>
-            <span style={{ color: '#ef4444' }}>🔴 ADX (14)</span>
-          </div>
+          <CandlestickChart candles={candles} symbol={chartSymbol} resolution={chartResolution} />
         </div>
 
-        <CandlestickChart candles={candles} symbol={chartSymbol} resolution={chartResolution} />
-      </div>
-
-      {/* Main Layout Grid */}
-      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '20px', marginBottom: '24px' }}>
-        {/* Terminal Log */}
+        {/* Right Box: Terminal Feed Log */}
         <div style={{
           background: 'rgba(18, 24, 38, 0.75)',
           backdropFilter: 'blur(12px)',
           border: '1px solid rgba(255, 255, 255, 0.08)',
           borderRadius: '16px',
-          padding: '20px'
+          padding: '16px',
+          display: 'flex',
+          flexDirection: 'column',
+          justifyContent: 'space-between'
         }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-              <span style={{ fontWeight: '600', fontSize: '14px' }}>📡 Terminal Log Filters:</span>
+          <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+              <span style={{ fontWeight: '700', fontSize: '14px' }}>📡 Terminal Feed Log</span>
+              <button onClick={() => { fetchStatus(); fetchCandles(); }} style={{
+                background: 'transparent',
+                border: '1px solid rgba(255, 255, 255, 0.1)',
+                color: '#9ca3af',
+                padding: '3px 8px',
+                borderRadius: '6px',
+                fontSize: '11px',
+                cursor: 'pointer'
+              }}>
+                Refresh
+              </button>
+            </div>
+
+            {/* Coin Log Filter Selector Bar */}
+            <div style={{ display: 'flex', gap: '4px', alignItems: 'center', flexWrap: 'wrap', marginBottom: '12px' }}>
+              <span style={{ fontSize: '10px', color: '#9ca3af', marginRight: '2px' }}>Log Coins:</span>
               <button onClick={selectAllLogCoins} style={{
                 background: 'rgba(59, 130, 246, 0.2)',
                 border: '1px solid #3b82f6',
                 color: '#3b82f6',
                 borderRadius: '4px',
-                padding: '2px 6px',
-                fontSize: '10px',
+                padding: '2px 5px',
+                fontSize: '9px',
                 fontWeight: '700',
                 cursor: 'pointer'
               }}>
@@ -519,8 +542,8 @@ export default function Dashboard() {
                 border: '1px solid #00f090',
                 color: '#00f090',
                 borderRadius: '4px',
-                padding: '2px 6px',
-                fontSize: '10px',
+                padding: '2px 5px',
+                fontSize: '9px',
                 fontWeight: '700',
                 cursor: 'pointer'
               }}>
@@ -537,8 +560,8 @@ export default function Dashboard() {
                       color: isChecked ? '#ffffff' : '#6b7280',
                       border: '1px solid rgba(255, 255, 255, 0.1)',
                       borderRadius: '4px',
-                      padding: '2px 5px',
-                      fontSize: '10px',
+                      padding: '2px 4px',
+                      fontSize: '9px',
                       fontWeight: '700',
                       cursor: 'pointer'
                     }}
@@ -549,36 +572,29 @@ export default function Dashboard() {
               })}
             </div>
 
-            <button onClick={() => { fetchStatus(); fetchCandles(); }} style={{
-              background: 'transparent',
-              border: '1px solid rgba(255, 255, 255, 0.1)',
-              color: '#9ca3af',
-              padding: '4px 10px',
-              borderRadius: '6px',
-              fontSize: '12px',
-              cursor: 'pointer'
+            {/* Live Scrolling Terminal Window */}
+            <div style={{
+              background: '#06080d',
+              border: '1px solid rgba(255, 255, 255, 0.05)',
+              borderRadius: '12px',
+              padding: '14px',
+              fontFamily: 'monospace',
+              fontSize: '11px',
+              color: '#a7f3d0',
+              height: '410px',
+              overflowY: 'auto',
+              lineHeight: '1.6'
             }}>
-              Refresh
-            </button>
-          </div>
-          <div style={{
-            background: '#06080d',
-            border: '1px solid rgba(255, 255, 255, 0.05)',
-            borderRadius: '12px',
-            padding: '16px',
-            fontFamily: 'monospace',
-            fontSize: '12px',
-            color: '#a7f3d0',
-            height: '240px',
-            overflowY: 'auto',
-            lineHeight: '1.6'
-          }}>
-            {logs.map((log, idx) => (
-              <div key={idx} style={{ marginBottom: '4px' }}>{log}</div>
-            ))}
+              {logs.map((log, idx) => (
+                <div key={idx} style={{ marginBottom: '4px', wordBreak: 'break-all' }}>{log}</div>
+              ))}
+            </div>
           </div>
         </div>
+      </div>
 
+      {/* Tables & Summary Grid Section */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '20px' }}>
         {/* Paper Portfolio Summary */}
         <div style={{
           background: 'rgba(18, 24, 38, 0.75)',
@@ -587,7 +603,7 @@ export default function Dashboard() {
           borderRadius: '16px',
           padding: '20px'
         }}>
-          <h2 style={{ fontWeight: '600', fontSize: '14px', marginBottom: '16px' }}>💼 OKX Futures Portfolio Summary</h2>
+          <h2 style={{ fontWeight: '600', fontSize: '14px', marginBottom: '16px' }}>💼 Portfolio Summary</h2>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', fontSize: '13px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', paddingBottom: '8px', borderBottom: '1px solid rgba(255, 255, 255, 0.05)' }}>
               <span style={{ color: '#9ca3af' }}>Current Balance</span>
@@ -609,10 +625,7 @@ export default function Dashboard() {
             </div>
           </div>
         </div>
-      </div>
 
-      {/* Tables Section */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
         {/* Active Positions */}
         <div style={{
           background: 'rgba(18, 24, 38, 0.75)',
@@ -621,15 +634,14 @@ export default function Dashboard() {
           borderRadius: '16px',
           padding: '20px'
         }}>
-          <h2 style={{ fontWeight: '600', fontSize: '14px', marginBottom: '12px' }}>📍 Active OKX Futures Positions</h2>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+          <h2 style={{ fontWeight: '600', fontSize: '14px', marginBottom: '12px' }}>📍 Active Positions</h2>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px' }}>
             <thead>
               <tr style={{ color: '#9ca3af', borderBottom: '1px solid rgba(255, 255, 255, 0.05)', textAlign: 'left' }}>
-                <th style={{ paddingBottom: '8px' }}>Instrument</th>
-                <th style={{ paddingBottom: '8px' }}>Side</th>
-                <th style={{ paddingBottom: '8px' }}>Entry</th>
-                <th style={{ paddingBottom: '8px' }}>SL / TP</th>
-                <th style={{ paddingBottom: '8px' }}>Margin (3x)</th>
+                <th style={{ paddingBottom: '6px' }}>Symbol</th>
+                <th style={{ paddingBottom: '6px' }}>Side</th>
+                <th style={{ paddingBottom: '6px' }}>Entry</th>
+                <th style={{ paddingBottom: '6px' }}>SL / TP</th>
               </tr>
             </thead>
             <tbody>
@@ -638,30 +650,29 @@ export default function Dashboard() {
                   const isLong = pos.side === 'LONG';
                   return (
                     <tr key={pos.id} style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.05)' }}>
-                      <td style={{ padding: '8px 0', fontWeight: 'bold' }}>{pos.symbol}</td>
-                      <td style={{ padding: '8px 0' }}>
+                      <td style={{ padding: '6px 0', fontWeight: 'bold' }}>{pos.symbol.split('-')[0]}</td>
+                      <td style={{ padding: '6px 0' }}>
                         <span style={{
-                          padding: '2px 6px',
+                          padding: '2px 5px',
                           borderRadius: '4px',
                           fontWeight: '700',
-                          fontSize: '10px',
+                          fontSize: '9px',
                           background: isLong ? 'rgba(0, 240, 144, 0.15)' : 'rgba(255, 59, 105, 0.15)',
                           color: isLong ? '#00f090' : '#ff3b69'
                         }}>
-                          {pos.side} 3x
+                          {pos.side}
                         </span>
                       </td>
-                      <td style={{ padding: '8px 0', fontFamily: 'monospace' }}>${pos.entry_price?.toLocaleString()}</td>
-                      <td style={{ padding: '8px 0', fontFamily: 'monospace' }}>
+                      <td style={{ padding: '6px 0', fontFamily: 'monospace' }}>${pos.entry_price?.toLocaleString()}</td>
+                      <td style={{ padding: '6px 0', fontFamily: 'monospace' }}>
                         <span style={{ color: '#ff3b69' }}>${pos.sl_price?.toLocaleString()}</span> / <span style={{ color: '#00f090' }}>${pos.tp_price?.toLocaleString()}</span>
                       </td>
-                      <td style={{ padding: '8px 0', fontFamily: 'monospace' }}>${pos.margin_required?.toLocaleString()}</td>
                     </tr>
                   );
                 })
               ) : (
                 <tr>
-                  <td colSpan={5} style={{ padding: '16px 0', color: '#6b7280', textAlign: 'center' }}>No active positions</td>
+                  <td colSpan={4} style={{ padding: '16px 0', color: '#6b7280', textAlign: 'center' }}>No active positions</td>
                 </tr>
               )}
             </tbody>
@@ -676,14 +687,13 @@ export default function Dashboard() {
           borderRadius: '16px',
           padding: '20px'
         }}>
-          <h2 style={{ fontWeight: '600', fontSize: '14px', marginBottom: '12px' }}>📜 Closed Trade History</h2>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+          <h2 style={{ fontWeight: '600', fontSize: '14px', marginBottom: '12px' }}>📜 Closed History</h2>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px' }}>
             <thead>
               <tr style={{ color: '#9ca3af', borderBottom: '1px solid rgba(255, 255, 255, 0.05)', textAlign: 'left' }}>
-                <th style={{ paddingBottom: '8px' }}>Instrument</th>
-                <th style={{ paddingBottom: '8px' }}>Side / Result</th>
-                <th style={{ paddingBottom: '8px' }}>Entry &rarr; Exit</th>
-                <th style={{ paddingBottom: '8px' }}>Net PnL</th>
+                <th style={{ paddingBottom: '6px' }}>Symbol</th>
+                <th style={{ paddingBottom: '6px' }}>Side</th>
+                <th style={{ paddingBottom: '6px' }}>Net PnL</th>
               </tr>
             </thead>
             <tbody>
@@ -693,32 +703,20 @@ export default function Dashboard() {
                   const isLong = tr.side === 'LONG';
                   return (
                     <tr key={tr.id} style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.05)' }}>
-                      <td style={{ padding: '8px 0', fontWeight: 'bold' }}>{tr.symbol}</td>
-                      <td style={{ padding: '8px 0' }}>
+                      <td style={{ padding: '6px 0', fontWeight: 'bold' }}>{tr.symbol.split('-')[0]}</td>
+                      <td style={{ padding: '6px 0' }}>
                         <span style={{
-                          padding: '2px 6px',
+                          padding: '2px 5px',
                           borderRadius: '4px',
                           fontWeight: '700',
-                          fontSize: '10px',
-                          marginRight: '4px',
+                          fontSize: '9px',
                           background: isLong ? 'rgba(0, 240, 144, 0.15)' : 'rgba(255, 59, 105, 0.15)',
                           color: isLong ? '#00f090' : '#ff3b69'
                         }}>
                           {tr.side}
                         </span>
-                        <span style={{
-                          padding: '2px 6px',
-                          borderRadius: '4px',
-                          fontWeight: '700',
-                          fontSize: '10px',
-                          background: isWin ? 'rgba(0, 240, 144, 0.15)' : 'rgba(255, 59, 105, 0.15)',
-                          color: isWin ? '#00f090' : '#ff3b69'
-                        }}>
-                          {tr.type}
-                        </span>
                       </td>
-                      <td style={{ padding: '8px 0', fontFamily: 'monospace' }}>${tr.entry_price?.toLocaleString()} &rarr; ${tr.exit_price?.toLocaleString()}</td>
-                      <td style={{ padding: '8px 0', fontFamily: 'monospace', fontWeight: '700', color: isWin ? '#00f090' : '#ff3b69' }}>
+                      <td style={{ padding: '6px 0', fontFamily: 'monospace', fontWeight: '700', color: isWin ? '#00f090' : '#ff3b69' }}>
                         ${tr.net_pnl} ({tr.pnl_pct}%)
                       </td>
                     </tr>
@@ -726,7 +724,7 @@ export default function Dashboard() {
                 })
               ) : (
                 <tr>
-                  <td colSpan={4} style={{ padding: '16px 0', color: '#6b7280', textAlign: 'center' }}>No closed trades yet</td>
+                  <td colSpan={3} style={{ padding: '16px 0', color: '#6b7280', textAlign: 'center' }}>No closed trades yet</td>
                 </tr>
               )}
             </tbody>
