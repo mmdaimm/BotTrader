@@ -1,7 +1,7 @@
 """
 WebTraderBot FastAPI Backend Server (Railway.app Ready)
 Provides REST API services for Next.js Web Dashboard & Telegram Notifier Integration.
-Supports OKX Perpetual Swaps & Dual-Direction (LONG/SHORT) Trade Simulations.
+Supports OKX Perpetual Swaps, Dual-Direction (LONG/SHORT) Trade Simulations, and Candlestick + Indicators API.
 """
 
 from fastapi import FastAPI, Query
@@ -14,12 +14,13 @@ if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
 from src.core.trader_bot import TraderBot
+from src.core.indicators import TechnicalIndicators
 from src.core.quant_analyzer import QuantAnalyzer
 
 app = FastAPI(
     title="WebTraderBot FastAPI Engine (OKX Futures Edition)",
     description="Multi-Crypto Perpetual Futures Engine for Next.js Dashboard",
-    version="3.0.0"
+    version="3.5.0"
 )
 
 # Enable CORS for Next.js frontend (Vercel & Localhost)
@@ -46,6 +47,56 @@ def read_root():
 def get_status():
     """Return real-time bot metrics, prices, indicators, active positions, and trade history."""
     return bot.run_single_iteration()
+
+@app.get("/api/candles")
+def get_candles_data(symbol: str = Query("BTC-USDT-SWAP"), resolution: str = Query("15")):
+    """
+    Return historical OHLCV candles and pre-calculated indicator series (EMA 200, EMA 9, EMA 21, VWAP, ADX, Volume)
+    for high-performance interactive Candlestick chart rendering on Next.js frontend.
+    """
+    try:
+        candles = bot.client.get_candles(symbol=symbol, resolution=resolution, limit=300)
+        if not candles:
+            return {"symbol": symbol, "candles": [], "indicators": {}}
+            
+        closes = [c["close"] for c in candles]
+        volumes = [c["volume"] for c in candles]
+        
+        ema200 = TechnicalIndicators.calculate_ema(closes, 200)
+        ema9 = TechnicalIndicators.calculate_ema(closes, 9)
+        ema21 = TechnicalIndicators.calculate_ema(closes, 21)
+        rsi = TechnicalIndicators.calculate_rsi(closes, 14)
+        adx = TechnicalIndicators.calculate_adx(candles, 14)
+        vol_sma = TechnicalIndicators.calculate_sma(volumes, 20)
+        vwap = TechnicalIndicators.calculate_vwap(candles)
+        
+        formatted_candles = []
+        for i, c in enumerate(candles):
+            formatted_candles.append({
+                "time": c["timestamp"],
+                "open": c["open"],
+                "high": c["high"],
+                "low": c["low"],
+                "close": c["close"],
+                "volume": c["volume"],
+                "ema200": round(ema200[i], 4) if i < len(ema200) else None,
+                "ema9": round(ema9[i], 4) if i < len(ema9) else None,
+                "ema21": round(ema21[i], 4) if i < len(ema21) else None,
+                "rsi": round(rsi[i], 2) if i < len(rsi) else None,
+                "adx": round(adx[i], 2) if i < len(adx) else None,
+                "vwap": round(vwap[i], 4) if i < len(vwap) else None,
+                "vol_sma": round(vol_sma[i], 2) if i < len(vol_sma) else None
+            })
+            
+        return {
+            "symbol": symbol,
+            "resolution": resolution,
+            "count": len(formatted_candles),
+            "candles": formatted_candles
+        }
+    except Exception as e:
+        print(f"[API] Error fetching candles API for {symbol}: {e}")
+        return {"symbol": symbol, "candles": [], "error": str(e)}
 
 @app.get("/api/quant-report")
 def get_quant_report():

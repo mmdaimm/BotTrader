@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import CandlestickChart, { CandleData } from './components/CandlestickChart';
 
 interface PairEval {
   symbol: string;
@@ -79,12 +80,14 @@ export default function Dashboard() {
   ]);
   const [tradingMode, setTradingMode] = useState<string>('PAPER');
 
+  // Candlestick & Indicators Chart State
+  const [chartSymbol, setChartSymbol] = useState<string>('BTC-USDT-SWAP');
+  const [chartResolution, setChartResolution] = useState<string>('15');
+  const [candles, setCandles] = useState<CandleData[]>([]);
+
   const fetchStatus = async () => {
     try {
-      // Primary attempt
       let res = await fetch(`${backendUrl}/api/status`).catch(() => null);
-      
-      // Automatic fallback if localhost is offline
       if (!res && backendUrl === 'http://localhost:8000') {
         const railwayUrl = process.env.NEXT_PUBLIC_RAILWAY_URL;
         if (railwayUrl) {
@@ -103,13 +106,11 @@ export default function Dashboard() {
       const btcPrice = result.pair_results?.['BTC-USDT-SWAP']?.last_price;
       const ethPrice = result.pair_results?.['ETH-USDT-SWAP']?.last_price;
       const solPrice = result.pair_results?.['SOL-USDT-SWAP']?.last_price;
-      const xrpPrice = result.pair_results?.['XRP-USDT-SWAP']?.last_price;
-      const dogePrice = result.pair_results?.['DOGE-USDT-SWAP']?.last_price;
 
       if (btcPrice) {
         setLogs((prev) => [
           ...prev.slice(-15),
-          `[${now}] State: ${result.bot_state || result.status} | BTC=$${btcPrice?.toLocaleString()} | ETH=$${ethPrice?.toLocaleString()} | SOL=$${solPrice?.toLocaleString()} | XRP=$${xrpPrice?.toLocaleString()} | DOGE=$${dogePrice?.toLocaleString()}`
+          `[${now}] State: ${result.bot_state || result.status} | BTC=$${btcPrice?.toLocaleString()} | ETH=$${ethPrice?.toLocaleString()} | SOL=$${solPrice?.toLocaleString()}`
         ]);
       }
     } catch (err) {
@@ -117,11 +118,27 @@ export default function Dashboard() {
     }
   };
 
+  const fetchCandles = async () => {
+    try {
+      const res = await fetch(`${backendUrl}/api/candles?symbol=${chartSymbol}&resolution=${chartResolution}`);
+      const result = await res.json();
+      if (result.candles) {
+        setCandles(result.candles);
+      }
+    } catch (err) {
+      console.error('Error fetching candles data:', err);
+    }
+  };
+
   useEffect(() => {
     fetchStatus();
-    const interval = setInterval(fetchStatus, 5000);
+    fetchCandles();
+    const interval = setInterval(() => {
+      fetchStatus();
+      fetchCandles();
+    }, 5000);
     return () => clearInterval(interval);
-  }, [backendUrl]);
+  }, [backendUrl, chartSymbol, chartResolution]);
 
   const startBot = async () => {
     const res = await fetch(`${backendUrl}/api/start`, { method: 'POST' });
@@ -162,6 +179,7 @@ export default function Dashboard() {
     const resData = await res.json();
     alert(resData.message);
     fetchStatus();
+    fetchCandles();
   };
 
   const pairs = data?.pair_results || {};
@@ -220,8 +238,8 @@ export default function Dashboard() {
             O
           </div>
           <div>
-            <h1 style={{ fontSize: '20px', fontWeight: '700', margin: 0 }}>WebTraderBot — OKX Futures Edition</h1>
-            <p style={{ fontSize: '12px', color: '#9ca3af', margin: 0 }}>Connected to: {backendUrl}</p>
+            <h1 style={{ fontSize: '20px', fontWeight: '700', margin: 0 }}>WebTraderBot — Interactive Candlesticks & Indicators</h1>
+            <p style={{ fontSize: '12px', color: '#9ca3af', margin: 0 }}>OKX Perpetual Swaps (EMA 200, EMA 9, EMA 21, VWAP, ADX, Volume)</p>
           </div>
         </div>
 
@@ -321,18 +339,24 @@ export default function Dashboard() {
           const item = pairs[coin.sym];
           const price = item?.last_price;
           const sig = item?.eval?.signal || 'NONE';
+          const isSelected = chartSymbol === coin.sym;
           return (
-            <div key={coin.sym} style={{
-              background: 'rgba(18, 24, 38, 0.75)',
-              backdropFilter: 'blur(12px)',
-              border: '1px solid rgba(255, 255, 255, 0.08)',
-              borderRadius: '16px',
-              padding: '16px'
-            }}>
+            <div key={coin.sym} 
+              onClick={() => setChartSymbol(coin.sym)}
+              style={{
+                background: isSelected ? 'rgba(59, 130, 246, 0.15)' : 'rgba(18, 24, 38, 0.75)',
+                backdropFilter: 'blur(12px)',
+                border: isSelected ? '2px solid #3b82f6' : '1px solid rgba(255, 255, 255, 0.08)',
+                borderRadius: '16px',
+                padding: '16px',
+                cursor: 'pointer',
+                transition: 'all 0.2s ease'
+              }}
+            >
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', fontSize: '11px', color: '#9ca3af' }}>
-                <span style={{ fontWeight: '700' }}>{coin.label}</span>
+                <span style={{ fontWeight: '700', color: isSelected ? '#3b82f6' : '#9ca3af' }}>{coin.label}</span>
                 <div style={{ display: 'flex', gap: '4px' }}>
-                  <button onClick={() => simTrade(coin.sym, 'LONG')} style={{
+                  <button onClick={(e) => { e.stopPropagation(); simTrade(coin.sym, 'LONG'); }} style={{
                     background: '#00f090',
                     color: '#000',
                     border: 'none',
@@ -344,7 +368,7 @@ export default function Dashboard() {
                   }}>
                     + LONG
                   </button>
-                  <button onClick={() => simTrade(coin.sym, 'SHORT')} style={{
+                  <button onClick={(e) => { e.stopPropagation(); simTrade(coin.sym, 'SHORT'); }} style={{
                     background: '#ff3b69',
                     color: '#fff',
                     border: 'none',
@@ -373,6 +397,45 @@ export default function Dashboard() {
         })}
       </div>
 
+      {/* Interactive Candlestick Chart Section */}
+      <div style={{ marginBottom: '24px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <h2 style={{ fontSize: '15px', fontWeight: '700', margin: 0 }}>📊 Live Candlestick & Multi-Indicator Chart ({chartSymbol})</h2>
+            <div style={{ display: 'flex', gap: '6px' }}>
+              {['5', '15', '60'].map((tf) => (
+                <button
+                  key={tf}
+                  onClick={() => setChartResolution(tf)}
+                  style={{
+                    background: chartResolution === tf ? '#3b82f6' : 'rgba(255, 255, 255, 0.05)',
+                    border: '1px solid rgba(255, 255, 255, 0.1)',
+                    color: chartResolution === tf ? '#fff' : '#9ca3af',
+                    padding: '3px 8px',
+                    borderRadius: '6px',
+                    fontSize: '11px',
+                    fontWeight: '700',
+                    cursor: 'pointer'
+                  }}
+                >
+                  {tf === '60' ? '1h' : `${tf}m`}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', gap: '12px', fontSize: '11px', fontWeight: '600' }}>
+            <span style={{ color: '#a855f7' }}>🟪 EMA 200</span>
+            <span style={{ color: '#3b82f6' }}>🔷 EMA 9</span>
+            <span style={{ color: '#f97316' }}>🍊 EMA 21</span>
+            <span style={{ color: '#38bdf8' }}>🩵 VWAP</span>
+            <span style={{ color: '#ef4444' }}>🔴 ADX (14)</span>
+          </div>
+        </div>
+
+        <CandlestickChart candles={candles} symbol={chartSymbol} resolution={chartResolution} />
+      </div>
+
       {/* Main Layout Grid */}
       <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '20px', marginBottom: '24px' }}>
         {/* Terminal Log */}
@@ -385,7 +448,7 @@ export default function Dashboard() {
         }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
             <span style={{ fontWeight: '600', fontSize: '14px' }}>📡 OKX Perpetual Feed (Dual LONG & SHORT)</span>
-            <button onClick={fetchStatus} style={{
+            <button onClick={() => { fetchStatus(); fetchCandles(); }} style={{
               background: 'transparent',
               border: '1px solid rgba(255, 255, 255, 0.1)',
               color: '#9ca3af',
