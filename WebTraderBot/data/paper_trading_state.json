@@ -1,0 +1,53 @@
+{
+  "initial_capital": 10000.0,
+  "current_capital": 6944.444444444445,
+  "leverage": 3,
+  "active_positions": {
+    "ETH-USDT-SWAP": {
+      "id": "PAPER-1784835248-ETH-USDT-SWAP-SHORT",
+      "symbol": "ETH-USDT-SWAP",
+      "side": "SHORT",
+      "leverage": 3,
+      "entry_price": 1881.52,
+      "qty": 2.6574259109656024,
+      "order_value": 5000.0,
+      "margin_required": 1666.6666666666667,
+      "sl_price": 1937.9656,
+      "tp_price": 1768.6288,
+      "entry_time": "2026-07-24 02:34:08",
+      "status": "OPEN"
+    },
+    "BTC-USDT-SWAP": {
+      "id": "PAPER-1784837676-BTC-USDT-SWAP-SHORT",
+      "symbol": "BTC-USDT-SWAP",
+      "side": "SHORT",
+      "timeframe": "15m",
+      "leverage": 3,
+      "entry_price": 65059.05,
+      "qty": 0.06404438224454041,
+      "order_value": 4166.67,
+      "margin_required": 1388.89,
+      "sl_price": 67010.8215,
+      "tp_price": 63107.2785,
+      "rr_ratio": 1.0,
+      "trailing_active": false,
+      "entry_timestamp": 1784837676.541934,
+      "entry_time": "2026-07-24 03:14:36",
+      "day_of_week": "Friday",
+      "hour_of_day": 3,
+      "status": "OPEN",
+      "market_snapshot": {
+        "ema200": 0.0,
+        "ema9": 0.0,
+        "ema21": 0.0,
+        "rsi": 50.0,
+        "adx": 20.0,
+        "atr": 0.0,
+        "volume_ratio": 1.0,
+        "vwap": 65059.05
+      }
+    }
+  },
+  "trade_history": [],
+  "last_saved": "2026-07-24 03:14:36"
+}
