@@ -110,7 +110,8 @@ class BacktestEngine:
                     print(f"[Backtest] Cache write error for {symbol}: {e}")
 
         cached_data.sort(key=lambda x: x["timestamp"])
-        return cached_data
+        needed_candles = int(days * 6)
+        return cached_data[-needed_candles:] if len(cached_data) > needed_candles else cached_data
 
     def run_simulation(self, symbol: str, initial_capital: float = 10000.0, days: int = 180, has_btc_eth_lead: bool = False) -> Dict[str, Any]:
         """
