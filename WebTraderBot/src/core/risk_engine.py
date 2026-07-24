@@ -12,10 +12,10 @@ class RiskEngine:
         self.consecutive_losses = 0
         self.is_circuit_broken = False
 
-    def calculate_position_sizing(self, capital: float, entry_price: float, atr_val: float, side: str = "LONG", sl_multiplier: float = 1.5, tp_multiplier: float = 1.5) -> dict:
+    def calculate_position_sizing(self, capital: float, entry_price: float, atr_val: float, side: str = "LONG", sl_multiplier: float = 1.5, tp_multiplier: float = 2.25) -> dict:
         """
         Calculate position size and dynamic ATR SL/TP levels for LONG and SHORT trades.
-        Default TP Multiplier set to 1.5x ATR for fast scalp profit taking.
+        TP Multiplier set to 2.25x ATR for R:R = 1 : 1.5 ratio to eliminate fee drag.
         """
         sl_distance = sl_multiplier * atr_val
         tp_distance = tp_multiplier * atr_val
