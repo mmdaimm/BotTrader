@@ -1,10 +1,9 @@
 """
 WebTraderBot Quantitative Multi-Strategy Backtesting Engine (Production Standard)
-Simulates 6-Month (180 Days / 18,000 Candles) Dual-Engine Portfolio Performance:
-- Engine A: 15m Trend-Pullback Scalper (with EMA21 Slope + VMA20 Filters)
-- Engine B: Daily Cash Flow Funding Rate Yield Arbitrage (+15.33% APY / +0.042% daily cash flow)
-- Friction Deductions (0.05% Taker Fee per side + 0.02% Slippage Buffer)
-- Tracks Initial Capital, Final Capital, Net PnL, Win Rate %, Max Drawdown %, & Accumulated Cash Flow
+Optimized Execution:
+- Adjusted Risk-to-Reward Ratio: R:R = 1 : 1.5 (TP 2.25x ATR / SL 1.5x ATR)
+- High-Confluence Filter: Reduces over-trading fee drag from 369 trades down to high-quality trades
+- Calculates Win Rate %, Profit Factor, Max Drawdown %, Net PnL %, & Accumulated Cash Flow
 """
 
 import sys
@@ -32,13 +31,10 @@ class BacktestEngine:
         self.daily_funding_yield_pct = 0.042  # ~15.33% APY / 365 days = +0.042% daily
 
     def fetch_deep_history(self, symbol: str, resolution: str = "15", days: int = 180) -> List[Dict[str, Any]]:
-        """Deep Historical Pagination Fetcher (Supports 3-6 Months / 8,640 - 17,280 candles)."""
         global_symbol = SYMBOL_MAP.get(symbol, symbol.replace("-USDT-SWAP", "USDT"))
         target_count = min(days * 24 * 4, 18000)
         all_candles = []
         end_time_ms = None
-
-        print(f"[Backtest] Downloading deep {days}-day historical dataset for {symbol} ({target_count} candles)...")
 
         while len(all_candles) < target_count:
             try:
@@ -104,9 +100,7 @@ class BacktestEngine:
 
     def run_simulation(self, symbol: str, initial_capital: float = 10000.0, days: int = 180) -> Dict[str, Any]:
         """
-        Run 6-Month simulation comparing:
-        1. Pure Trend Scalper Strategy (Without Cash Flow)
-        2. Combined Multi-Engine (Trend Scalper + Daily Cash Flow Arbitrage Yield)
+        Run 6-Month simulation with Optimized Risk-to-Reward Ratio R:R = 1 : 1.5 (TP 2.25x ATR / SL 1.5x ATR)
         """
         candles = self.get_cached_candles(symbol, resolution="15", days=days)
         if len(candles) < 150:
@@ -119,7 +113,7 @@ class BacktestEngine:
         closes = [c["close"] for c in candles]
         volumes = [c["volume"] for c in candles]
 
-        # Calculate Indicators
+        # Indicators
         ema200 = TechnicalIndicators.calculate_ema(closes, 200)
         ema9 = TechnicalIndicators.calculate_ema(closes, 9)
         ema21 = TechnicalIndicators.calculate_ema(closes, 21)
@@ -128,11 +122,7 @@ class BacktestEngine:
         vma20 = TechnicalIndicators.calculate_sma(volumes, 20)
         atr = TechnicalIndicators.calculate_atr(candles, 14)
 
-        # Simulation Variables
         current_capital_trend = initial_capital
-        current_capital_combined = initial_capital
-        accumulated_cashflow_usd = 0.0
-
         peak_capital = initial_capital
         max_drawdown_usd = 0.0
         max_drawdown_pct = 0.0
@@ -142,8 +132,6 @@ class BacktestEngine:
 
         warmup = 100
         total_days_simulated = (len(candles) - warmup) / (24 * 4)
-
-        # Accumulate Daily Cash Flow Arbitrage Yield across simulated days
         daily_cashflow_per_day = initial_capital * 0.60 * (self.daily_funding_yield_pct / 100.0)
         accumulated_cashflow_usd = round(daily_cashflow_per_day * total_days_simulated, 2)
 
@@ -153,7 +141,7 @@ class BacktestEngine:
             high_p = c["high"]
             low_p = c["low"]
 
-            # Anti-Bias: Evaluate signals strictly using completed prior candle (i-1)
+            # Anti-Bias
             prev_price = closes[i - 1]
             prev_ema200 = ema200[i - 1] if i - 1 < len(ema200) else 0.0
             prev_ema9 = ema9[i - 1] if i - 1 < len(ema9) else 0.0
@@ -164,11 +152,10 @@ class BacktestEngine:
             prev_vma20 = vma20[i - 1] if i - 1 < len(vma20) else 1.0
             curr_atr = atr[i - 1] if i - 1 < len(atr) else (0.02 * price)
 
-            # Calculate EMA 21 Slope
             ema21_prev2 = ema21[i - 2] if i - 2 < len(ema21) else prev_ema21
             ema21_slope = ((prev_ema21 - ema21_prev2) / (ema21_prev2 or 1.0)) * 100.0
 
-            # Manage Open Position Exits
+            # Exits
             if positions:
                 pos = positions[0]
                 is_long = pos["side"] == "LONG"
@@ -212,16 +199,16 @@ class BacktestEngine:
                     })
                     positions.clear()
 
-            # Signal Generation (with EMA 21 Slope & VMA 20 Filters)
+            # Signal Generation: High-Confluence Filter (ADX > 22 + Volume > 1.8x VMA20 + Optimized R:R 1:1.5)
             if not positions:
-                is_trend_market = prev_adx > 20 and abs(ema21_slope) > 0.02
-                is_volume_valid = prev_vol > 1.5 * prev_vma20
+                is_trend_market = prev_adx > 22.0 and abs(ema21_slope) > 0.03
+                is_volume_valid = prev_vol > 1.8 * prev_vma20
 
                 signal = "NONE"
                 if is_trend_market and is_volume_valid:
-                    if prev_price > prev_ema200 and prev_ema9 > prev_ema21 and 45 <= prev_rsi <= 65:
+                    if prev_price > prev_ema200 and prev_ema9 > prev_ema21 and 50 <= prev_rsi <= 65:
                         signal = "BUY_LONG"
-                    elif prev_price < prev_ema200 and prev_ema9 < prev_ema21 and 35 <= prev_rsi <= 55:
+                    elif prev_price < prev_ema200 and prev_ema9 < prev_ema21 and 35 <= prev_rsi <= 50:
                         signal = "SELL_SHORT"
 
                 if signal != "NONE":
@@ -229,7 +216,7 @@ class BacktestEngine:
                     entry_price = price * (1 + self.slippage_rate) if side == "LONG" else price * (1 - self.slippage_rate)
                     
                     sl_dist = 1.5 * curr_atr
-                    tp_dist = 1.5 * curr_atr
+                    tp_dist = 2.25 * curr_atr  # Optimized TP = 2.25x ATR (R:R = 1 : 1.5)
                     sl = entry_price - sl_dist if side == "LONG" else entry_price + sl_dist
                     tp = entry_price + tp_dist if side == "LONG" else entry_price - tp_dist
 
@@ -246,7 +233,7 @@ class BacktestEngine:
                         "tp": tp
                     })
 
-        # Final Performance Metrics Calculation
+        # Calculations
         total_trades = len(closed_trades)
         win_trades = len([t for t in closed_trades if t["result"] == "WIN"])
         loss_trades = len([t for t in closed_trades if t["result"] == "LOSS"])
@@ -259,7 +246,6 @@ class BacktestEngine:
         net_profit_trend = round(current_capital_trend - initial_capital, 2)
         net_profit_trend_pct = round((net_profit_trend / initial_capital) * 100.0, 2)
 
-        # Combined Strategy Capital (Trend Scalper + Cash Flow Yield)
         current_capital_combined = round(current_capital_trend + accumulated_cashflow_usd, 2)
         net_profit_combined = round(current_capital_combined - initial_capital, 2)
         net_profit_combined_pct = round((net_profit_combined / initial_capital) * 100.0, 2)
@@ -271,6 +257,7 @@ class BacktestEngine:
             "candles_analyzed": len(candles),
             "initial_capital_usd": initial_capital,
             "initial_capital_thb": round(initial_capital * 35.5, 2),
+            "optimization": "R:R = 1 : 1.5 (TP 2.25x ATR / SL 1.5x ATR) + High-Confluence Filter",
             "trend_only_system": {
                 "final_capital_usd": round(current_capital_trend, 2),
                 "net_profit_usd": net_profit_trend,
@@ -306,6 +293,6 @@ def run_backtest_process(symbol: str = "BTC-USDT-SWAP", initial_capital: float =
     return engine.run_simulation(symbol=symbol, initial_capital=initial_capital, days=days)
 
 if __name__ == "__main__":
-    print("=== Testing 6-Month (180 Days) Capital Simulation Engine ===")
+    print("=== Testing R:R 1:1.5 Optimized 6-Month Backtest Engine ===")
     res = run_backtest_process("BTC-USDT-SWAP", initial_capital=10000.0, days=180)
     print(json.dumps(res, indent=2))
