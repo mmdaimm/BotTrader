@@ -820,7 +820,7 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* Active Positions Table */}
+        {/* Active Positions Table & Closed Trades History */}
         <div style={{
           background: 'rgba(18, 24, 38, 0.75)',
           backdropFilter: 'blur(12px)',
@@ -828,14 +828,14 @@ export default function Dashboard() {
           borderRadius: '16px',
           padding: '20px'
         }}>
-          <h2 style={{ fontWeight: '600', fontSize: '14px', marginBottom: '12px' }}>📍 Active Positions</h2>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px' }}>
+          <h2 style={{ fontWeight: '600', fontSize: '14px', marginBottom: '12px', color: '#00f090' }}>📍 Active Positions</h2>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px', marginBottom: '20px' }}>
             <thead>
               <tr style={{ color: '#9ca3af', borderBottom: '1px solid rgba(255, 255, 255, 0.05)', textAlign: 'left' }}>
                 <th style={{ paddingBottom: '6px' }}>Symbol</th>
                 <th style={{ paddingBottom: '6px' }}>Side</th>
                 <th style={{ paddingBottom: '6px' }}>Entry</th>
-                <th style={{ paddingBottom: '6px' }}>Profit (PnL)</th>
+                <th style={{ paddingBottom: '6px' }}>Realized PnL (กำไรที่ปิดแล้ว)</th>
                 <th style={{ paddingBottom: '6px' }}>SL / TP1</th>
               </tr>
             </thead>
@@ -843,20 +843,8 @@ export default function Dashboard() {
               {data?.active_positions && data.active_positions.length > 0 ? (
                 data.active_positions.map((pos) => {
                   const isLong = pos.side === 'LONG';
-                  const item = pairs[pos.symbol];
-                  const lastPrice = item?.last_price;
-                  let pnl = 0;
-                  let pnlPct = 0;
-
-                  if (lastPrice && pos.entry_price) {
-                    if (pos.side === 'LONG') {
-                      pnl = (lastPrice - pos.entry_price) * pos.qty;
-                    } else {
-                      pnl = (pos.entry_price - lastPrice) * pos.qty;
-                    }
-                    pnlPct = pos.margin_required > 0 ? (pnl / pos.margin_required) * 100 : 0;
-                  }
-                  const isProfit = pnl >= 0;
+                  const isTp1Done = pos.tp1_done ?? false;
+                  const realizedPnl = pos.realized_pnl ?? 0.0;
 
                   return (
                     <tr key={pos.id} style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.05)' }}>
@@ -870,12 +858,12 @@ export default function Dashboard() {
                           background: isLong ? 'rgba(0, 240, 144, 0.15)' : 'rgba(255, 59, 105, 0.15)',
                           color: isLong ? '#00f090' : '#ff3b69'
                         }}>
-                          {pos.side} {pos.tp1_done ? '(50% BE)' : ''}
+                          {pos.side} {isTp1Done ? '(50% BE)' : ''}
                         </span>
                       </td>
                       <td style={{ padding: '6px 0', fontFamily: 'monospace' }}>${pos.entry_price?.toLocaleString()}</td>
-                      <td style={{ padding: '6px 0', fontFamily: 'monospace', fontWeight: '700', color: isProfit ? '#00f090' : '#ff3b69' }}>
-                        {isProfit ? '+' : ''}${pnl.toFixed(2)} ({isProfit ? '+' : ''}{pnlPct.toFixed(2)}%)
+                      <td style={{ padding: '6px 0', fontFamily: 'monospace', fontWeight: '700', color: isTp1Done ? '#00f090' : '#6b7280' }}>
+                        {isTp1Done ? `+$${realizedPnl} USD (TP1 Locked 🟢)` : '$0.00 (ยังไม่ปิดไม้)'}
                       </td>
                       <td style={{ padding: '6px 0', fontFamily: 'monospace' }}>
                         <span style={{ color: '#ff3b69' }}>${pos.sl_price?.toLocaleString()}</span> / <span style={{ color: '#00f090' }}>${pos.tp1_target ? pos.tp1_target.toLocaleString() : 'RUN'}</span>
@@ -890,6 +878,43 @@ export default function Dashboard() {
               )}
             </tbody>
           </table>
+
+          {/* Closed Trades History Table */}
+          <h2 style={{ fontWeight: '600', fontSize: '13px', marginBottom: '8px', color: '#38bdf8', paddingTop: '10px', borderTop: '1px solid rgba(255, 255, 255, 0.05)' }}>
+            📜 Closed Trades History (ประวัติการปิดทำกำไรเข้าพอร์ต)
+          </h2>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '10px' }}>
+            <thead>
+              <tr style={{ color: '#9ca3af', borderBottom: '1px solid rgba(255, 255, 255, 0.05)', textAlign: 'left' }}>
+                <th style={{ paddingBottom: '4px' }}>Symbol</th>
+                <th style={{ paddingBottom: '4px' }}>Type</th>
+                <th style={{ paddingBottom: '4px' }}>Net Profit (PnL $)</th>
+                <th style={{ paddingBottom: '4px' }}>Exit Time</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data?.trade_history && data.trade_history.length > 0 ? (
+                data.trade_history.map((tr) => {
+                  const isWin = tr.net_pnl >= 0;
+                  return (
+                    <tr key={tr.id} style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.03)' }}>
+                      <td style={{ padding: '4px 0', fontWeight: 'bold' }}>{tr.symbol.split('-')[0]}</td>
+                      <td style={{ padding: '4px 0', color: '#38bdf8' }}>{tr.type}</td>
+                      <td style={{ padding: '4px 0', fontFamily: 'monospace', fontWeight: '700', color: isWin ? '#00f090' : '#ff3b69' }}>
+                        {isWin ? '+' : ''}${tr.net_pnl} USD ({isWin ? '+' : ''}{tr.pnl_pct}%)
+                      </td>
+                      <td style={{ padding: '4px 0', color: '#9ca3af' }}>{tr.exit_time}</td>
+                    </tr>
+                  );
+                })
+              ) : (
+                <tr>
+                  <td colSpan={4} style={{ padding: '8px 0', color: '#6b7280', textAlign: 'center' }}>ยังไม่มีออเดอร์ที่ปิดทำกำไรเข้าพอร์ต</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
         </div>
       </div>
     </div>

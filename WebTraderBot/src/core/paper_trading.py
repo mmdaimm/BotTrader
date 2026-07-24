@@ -173,6 +173,7 @@ class PaperTradingEngine:
                     pos["qty"] *= 0.50
                     pos["margin_required"] *= 0.50
                     pos["tp1_done"] = True
+                    pos["realized_pnl"] = round(net_pnl_tp1, 2)
                     pos["state"] = "ST_RISK_FREE_50"
 
                     # Auto-Move SL to Breakeven (+0.10% Cover Fees Buffer)
