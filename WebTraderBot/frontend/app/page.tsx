@@ -92,39 +92,39 @@ interface StatusResponse {
 interface BacktestResult {
   symbol: string;
   status: string;
-  days_simulated: number;
-  candles_analyzed: number;
-  initial_capital_usd: number;
-  initial_capital_thb: number;
-  architecture: string;
-  allocation_breakdown: {
-    funding_arbitrage_80pct: {
-      allocated_capital_usd: number;
-      final_capital_usd: number;
-      accumulated_cashflow_usd: number;
-      accumulated_cashflow_thb: number;
-      annual_apy_pct: number;
+  days_simulated?: number;
+  candles_analyzed?: number;
+  initial_capital_usd?: number;
+  initial_capital_thb?: number;
+  architecture?: string;
+  allocation_breakdown?: {
+    funding_arbitrage_80pct?: {
+      allocated_capital_usd?: number;
+      final_capital_usd?: number;
+      accumulated_cashflow_usd?: number;
+      accumulated_cashflow_thb?: number;
+      annual_apy_pct?: number;
     };
-    scalping_engine_20pct: {
-      allocated_capital_usd: number;
-      final_capital_usd: number;
-      net_profit_usd: number;
-      net_profit_pct: number;
-      profit_factor: number;
-      total_trades: number;
-      win_rate_pct: number;
-      max_drawdown_pct: number;
+    scalping_engine_20pct?: {
+      allocated_capital_usd?: number;
+      final_capital_usd?: number;
+      net_profit_usd?: number;
+      net_profit_pct?: number;
+      profit_factor?: number;
+      total_trades?: number;
+      win_rate_pct?: number;
+      max_drawdown_pct?: number;
     };
   };
-  combined_portfolio_results: {
-    final_capital_usd: number;
-    final_capital_thb: number;
-    net_profit_usd: number;
-    net_profit_thb: number;
-    net_profit_pct: number;
-    verdict: string;
+  combined_portfolio_results?: {
+    final_capital_usd?: number;
+    final_capital_thb?: number;
+    net_profit_usd?: number;
+    net_profit_thb?: number;
+    net_profit_pct?: number;
+    verdict?: string;
   };
-  friction_deductions: string;
+  friction_deductions?: string;
 }
 
 const DEFAULT_BACKEND = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
@@ -315,7 +315,22 @@ export default function Dashboard() {
 
   const pairs = data?.pair_results || {};
   const summary = data?.paper_summary;
-  const alloc = data?.institutional_allocation;
+
+  // Extract Backtest Values with Robust Fallbacks
+  const combinedProfitUsd = backtestData?.combined_portfolio_results?.net_profit_usd ?? 0;
+  const combinedProfitPct = backtestData?.combined_portfolio_results?.net_profit_pct ?? 0;
+  const combinedProfitThb = backtestData?.combined_portfolio_results?.net_profit_thb ?? 0;
+  const combinedFinalUsd = backtestData?.combined_portfolio_results?.final_capital_usd ?? 10000;
+  const combinedFinalThb = backtestData?.combined_portfolio_results?.final_capital_thb ?? 355000;
+  const verdictStr = backtestData?.combined_portfolio_results?.verdict || '🟢 POSITIVE NET PROFIT';
+
+  const fundingCashflowUsd = backtestData?.allocation_breakdown?.funding_arbitrage_80pct?.accumulated_cashflow_usd ?? 0;
+  const fundingCashflowThb = backtestData?.allocation_breakdown?.funding_arbitrage_80pct?.accumulated_cashflow_thb ?? 0;
+
+  const scalpNetUsd = backtestData?.allocation_breakdown?.scalping_engine_20pct?.net_profit_usd ?? 0;
+  const scalpTradesCount = backtestData?.allocation_breakdown?.scalping_engine_20pct?.total_trades ?? 0;
+  const scalpWinRate = backtestData?.allocation_breakdown?.scalping_engine_20pct?.win_rate_pct ?? 0;
+  const scalpMaxDd = backtestData?.allocation_breakdown?.scalping_engine_20pct?.max_drawdown_pct ?? 0;
 
   return (
     <div style={{
@@ -440,49 +455,49 @@ export default function Dashboard() {
             <h3 style={{ margin: 0, fontSize: '15px', color: '#00f090', fontWeight: '700' }}>
               🧪 Institutional 80/20 Backtest Result: {backtestData.symbol} ({backtestData.days_simulated || 180} Days / {backtestData.candles_analyzed || 18000} Candles)
             </h3>
-            <span style={{ fontSize: '11px', color: '#38bdf8', fontWeight: '700' }}>{backtestData.combined_portfolio_results?.verdict || '🟢 COMPLETED'}</span>
+            <span style={{ fontSize: '11px', color: '#38bdf8', fontWeight: '700' }}>{verdictStr}</span>
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: '12px', fontSize: '12px' }}>
             <div>
               <div style={{ color: '#9ca3af' }}>Combined Net Profit</div>
-              <div style={{ fontWeight: '700', color: (backtestData.combined_portfolio_results?.net_profit_usd ?? 0) >= 0 ? '#00f090' : '#ff3b69', fontSize: '15px' }}>
-                +${backtestData.combined_portfolio_results?.net_profit_usd ?? backtestData.net_profit ?? 0} (+{backtestData.combined_portfolio_results?.net_profit_pct ?? backtestData.net_profit_pct ?? 0}%)
+              <div style={{ fontWeight: '700', color: combinedProfitUsd >= 0 ? '#00f090' : '#ff3b69', fontSize: '15px' }}>
+                {combinedProfitUsd >= 0 ? '+' : ''}${combinedProfitUsd} ({combinedProfitPct >= 0 ? '+' : ''}{combinedProfitPct}%)
               </div>
-              <div style={{ fontSize: '10px', color: '#9ca3af' }}>+{backtestData.combined_portfolio_results?.net_profit_thb ?? 0} THB</div>
+              <div style={{ fontSize: '10px', color: '#9ca3af' }}>{combinedProfitThb >= 0 ? '+' : ''}{combinedProfitThb} THB</div>
             </div>
             <div>
               <div style={{ color: '#9ca3af' }}>80% Funding Arbitrage</div>
               <div style={{ fontWeight: '700', color: '#38bdf8', fontSize: '14px' }}>
-                +${backtestData.allocation_breakdown?.funding_arbitrage_80pct?.accumulated_cashflow_usd ?? 0} USD
+                +${fundingCashflowUsd} USD
               </div>
-              <div style={{ fontSize: '10px', color: '#9ca3af' }}>+{backtestData.allocation_breakdown?.funding_arbitrage_80pct?.accumulated_cashflow_thb ?? 0} THB</div>
+              <div style={{ fontSize: '10px', color: '#9ca3af' }}>+{fundingCashflowThb} THB</div>
             </div>
             <div>
               <div style={{ color: '#9ca3af' }}>20% Scalping Net PnL</div>
-              <div style={{ fontWeight: '700', color: (backtestData.allocation_breakdown?.scalping_engine_20pct?.net_profit_usd ?? 0) >= 0 ? '#00f090' : '#ff3b69', fontSize: '14px' }}>
-                ${backtestData.allocation_breakdown?.scalping_engine_20pct?.net_profit_usd ?? 0} USD
+              <div style={{ fontWeight: '700', color: scalpNetUsd >= 0 ? '#00f090' : '#ff3b69', fontSize: '14px' }}>
+                ${scalpNetUsd} USD
               </div>
-              <div style={{ fontSize: '10px', color: '#9ca3af' }}>{backtestData.allocation_breakdown?.scalping_engine_20pct?.total_trades ?? backtestData.total_trades ?? 0} Trades</div>
+              <div style={{ fontSize: '10px', color: '#9ca3af' }}>{scalpTradesCount} Trades</div>
             </div>
             <div>
               <div style={{ color: '#9ca3af' }}>Scalp Win Rate</div>
               <div style={{ fontWeight: '700', color: '#f59e0b', fontSize: '14px' }}>
-                {backtestData.allocation_breakdown?.scalping_engine_20pct?.win_rate_pct ?? backtestData.win_rate_pct ?? 0}%
+                {scalpWinRate}%
               </div>
             </div>
             <div>
               <div style={{ color: '#9ca3af' }}>Max Drawdown</div>
               <div style={{ fontWeight: '700', color: '#ef4444', fontSize: '14px' }}>
-                {backtestData.allocation_breakdown?.scalping_engine_20pct?.max_drawdown_pct ?? backtestData.max_drawdown_pct ?? 0}%
+                {scalpMaxDd}%
               </div>
             </div>
             <div>
               <div style={{ color: '#9ca3af' }}>Final Portfolio</div>
               <div style={{ fontWeight: '700', color: '#00f090', fontSize: '15px' }}>
-                ${backtestData.combined_portfolio_results?.final_capital_usd ?? backtestData.final_capital ?? 10000} USD
+                ${combinedFinalUsd} USD
               </div>
-              <div style={{ fontSize: '10px', color: '#9ca3af' }}>{backtestData.combined_portfolio_results?.final_capital_thb ?? 355000} THB</div>
+              <div style={{ fontSize: '10px', color: '#9ca3af' }}>{combinedFinalThb} THB</div>
             </div>
           </div>
         </div>
