@@ -888,7 +888,9 @@ export default function Dashboard() {
                         {isTp1Done ? `+$${realizedPnl} USD (TP1 Locked 🟢)` : '$0.00 (ยังไม่ปิดไม้)'}
                       </td>
                       <td style={{ padding: '6px 0', fontFamily: 'monospace' }}>
-                        <span style={{ color: '#ff3b69' }}>${pos.sl_price?.toLocaleString()}</span> / <span style={{ color: '#00f090' }}>${pos.tp1_target ? pos.tp1_target.toLocaleString() : 'RUN'}</span>
+                        <span style={{ color: '#ff3b69' }}>${pos.sl_price?.toLocaleString()}</span> / <span style={{ color: '#00f090' }}>
+                          {isTp1Done ? 'RUN (TP1 Done 🟢)' : (pos.tp1_target ? `$${pos.tp1_target.toLocaleString()}` : (pos.tp_price ? `$${pos.tp_price.toLocaleString()}` : 'RUN'))}
+                        </span>
                       </td>
                     </tr>
                   );

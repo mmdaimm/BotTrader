@@ -55,6 +55,16 @@ class PaperTradingEngine:
                     self.leverage = state.get("leverage", self.leverage)
                     self.active_positions = state.get("active_positions", {})
                     self.trade_history = state.get("trade_history", [])
+
+                    # Migration guard: Ensure all active positions have tp1_target
+                    for sym, pos in self.active_positions.items():
+                        if "tp1_target" not in pos or not pos["tp1_target"]:
+                            atr = pos.get("atr_val", pos["entry_price"] * 0.02)
+                            if pos.get("side") == "LONG":
+                                pos["tp1_target"] = round(pos["entry_price"] + (1.5 * atr), 4)
+                            else:
+                                pos["tp1_target"] = round(pos["entry_price"] - (1.5 * atr), 4)
+
                     print(f"[PaperTradingEngine] Restored paper trading state with 4H Swing State Machine ({len(self.trade_history)} trades, {len(self.active_positions)} positions)")
             except Exception as e:
                 print(f"[PaperTradingEngine] Load state error: {e}")
