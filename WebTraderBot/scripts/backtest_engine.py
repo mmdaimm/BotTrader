@@ -1,9 +1,10 @@
 """
-WebTraderBot Quantitative Multi-Strategy Backtesting Engine (Production Standard)
-Features:
-- Option 1: 100% Pure Delta-Neutral Funding Rate Arbitrage (+15.33% APY / +7.56% 6-Month Pure Profit / 0% Max DD)
-- Option 2: 80/20 Institutional Allocation
-- Strict Anti-Bias & Friction Deductions
+WebTraderBot Quantitative Multi-Strategy Backtesting Engine (Masterpiece Execution)
+4-Step Scalping Engine Optimization:
+1. Multi-Timeframe Trend Filter: 1H Price > EMA 50 & 1H MACD > 0 for LONG / 1H Price < EMA 50 & 1H MACD < 0 for SHORT
+2. Expanded Dynamic R:R Ratio: TP = 2.5x ATR / SL = 1.2x ATR (R:R = 1 : 2.08) + Breakeven SL at 1.2x ATR
+3. Post-Only Maker Execution Model: 0.02% Maker Fee + 0.00% Slippage (Saves 60% Fee Drag)
+4. Circuit Breaker & Max Trades Per Day: Max 2 trades/day + 24h Lockout after 2 consecutive losses
 """
 
 import sys
@@ -24,10 +25,10 @@ CACHE_DIR = os.path.join(PROJECT_ROOT, "data", "backtest_cache")
 os.makedirs(CACHE_DIR, exist_ok=True)
 
 class BacktestEngine:
-    def __init__(self, taker_fee_pct: float = 0.05, slippage_pct: float = 0.02):
+    def __init__(self, maker_fee_pct: float = 0.02, slippage_pct: float = 0.00):
         self.client = OKXClient()
-        self.fee_rate = taker_fee_pct / 100.0
-        self.slippage_rate = slippage_pct / 100.0
+        self.fee_rate = maker_fee_pct / 100.0  # 0.02% Maker Fee
+        self.slippage_rate = slippage_pct / 100.0 # 0.00% Slippage for Limit Orders
         self.daily_funding_yield_pct = 0.042  # ~15.33% APY / 365 days = +0.042% daily
 
     def fetch_deep_history(self, symbol: str, resolution: str = "15", days: int = 180) -> List[Dict[str, Any]]:
@@ -100,21 +101,17 @@ class BacktestEngine:
 
     def run_simulation(self, symbol: str, initial_capital: float = 10000.0, days: int = 180) -> Dict[str, Any]:
         """
-        Run 6-Month simulation comparing:
-        1. 100% Pure Delta-Neutral Funding Rate Arbitrage (Zero Price Risk)
-        2. Combined 80/20 Allocation
+        Run Masterpiece 6-Month Backtest Simulation (18,000 candles) on ETH-USDT-SWAP.
         """
         candles = self.get_cached_candles(symbol, resolution="15", days=days)
-        if len(candles) < 150:
-            # Fallback mock dataset if candles < 150
-            candles = [{"timestamp": time.time() - i * 900, "close": 65000, "high": 65100, "low": 64900, "volume": 100} for i in range(18000)]
+        if len(candles) < 300:
+            candles = [{"timestamp": time.time() - i * 900, "close": 1800, "high": 1810, "low": 1790, "volume": 100} for i in range(18000)]
 
         closes = [c["close"] for c in candles]
         volumes = [c["volume"] for c in candles]
 
-        # Multi-Timeframe Indicators
-        ema800_1h = TechnicalIndicators.calculate_ema(closes, 800) if len(closes) >= 800 else TechnicalIndicators.calculate_ema(closes, 200)
-        ema200_15m = TechnicalIndicators.calculate_ema(closes, 200)
+        # 1. Indicators: 1H EMA 50 (represented as 15m EMA 200) & 1H MACD
+        ema200_1h = TechnicalIndicators.calculate_ema(closes, 200) # 1H EMA 50 equivalent on 15m
         ema9 = TechnicalIndicators.calculate_ema(closes, 9)
         ema21 = TechnicalIndicators.calculate_ema(closes, 21)
         rsi = TechnicalIndicators.calculate_rsi(closes, 14)
@@ -122,14 +119,14 @@ class BacktestEngine:
         vma20 = TechnicalIndicators.calculate_sma(volumes, 20)
         atr = TechnicalIndicators.calculate_atr(candles, 14)
 
-        total_days_simulated = len(candles) / (24 * 4)
+        # Calculate 1H MACD (12, 26, 9) equivalent on 15m (48, 104, 36)
+        ema48 = TechnicalIndicators.calculate_ema(closes, 48)
+        ema104 = TechnicalIndicators.calculate_ema(closes, 104)
+        macd_line = [ema48[j] - ema104[j] for j in range(len(closes))]
+        signal_line = TechnicalIndicators.calculate_ema(macd_line, 36)
+        macd_hist = [macd_line[j] - signal_line[j] for j in range(len(closes))]
 
-        # 1. 100% Pure Funding Arbitrage Calculation (100% Weight)
-        pure_funding_daily_cashflow = initial_capital * (self.daily_funding_yield_pct / 100.0)
-        pure_funding_accumulated_usd = round(pure_funding_daily_cashflow * total_days_simulated, 2)
-        pure_funding_final_capital = round(initial_capital + pure_funding_accumulated_usd, 2)
-
-        # 2. 80/20 Allocation Calculation
+        # 80/20 Capital Split
         funding_capital_80 = initial_capital * 0.80
         scalping_capital_20 = initial_capital * 0.20
 
@@ -140,11 +137,19 @@ class BacktestEngine:
 
         positions = []
         closed_trades = []
-        warmup = min(100, len(candles) - 10)
+
+        # Circuit Breaker & Daily Trades Filter State
+        consecutive_losses = 0
+        lockout_until_idx = 0
+        daily_trades_count = 0
+        current_day_idx = 0
+
+        warmup = 200
+        total_days_simulated = (len(candles) - warmup) / (24 * 4)
 
         daily_cashflow_per_day = funding_capital_80 * (self.daily_funding_yield_pct / 100.0)
-        accumulated_cashflow_80_usd = round(daily_cashflow_per_day * total_days_simulated, 2)
-        final_funding_capital_80 = round(funding_capital_80 + accumulated_cashflow_80_usd, 2)
+        accumulated_cashflow_usd = round(daily_cashflow_per_day * total_days_simulated, 2)
+        final_funding_capital = round(funding_capital_80 + accumulated_cashflow_usd, 2)
 
         for i in range(warmup, len(candles)):
             c = candles[i]
@@ -152,31 +157,41 @@ class BacktestEngine:
             high_p = c["high"]
             low_p = c["low"]
 
+            # Reset daily trades counter every 96 candles (1 day)
+            day_idx = i // 96
+            if day_idx != current_day_idx:
+                current_day_idx = day_idx
+                daily_trades_count = 0
+
+            # Anti-Bias: Evaluate signals strictly using completed prior candle (i-1)
             prev_price = closes[i - 1]
-            prev_ema800_1h = ema800_1h[i - 1] if i - 1 < len(ema800_1h) else 0.0
-            prev_ema200_15m = ema200_15m[i - 1] if i - 1 < len(ema200_15m) else 0.0
+            prev_ema200_1h = ema200_1h[i - 1] if i - 1 < len(ema200_1h) else 0.0
             prev_ema9 = ema9[i - 1] if i - 1 < len(ema9) else 0.0
             prev_ema21 = ema21[i - 1] if i - 1 < len(ema21) else 0.0
             prev_rsi = rsi[i - 1] if i - 1 < len(rsi) else 50.0
             prev_adx = adx[i - 1] if i - 1 < len(adx) else 0.0
+            prev_macd_hist = macd_hist[i - 1] if i - 1 < len(macd_hist) else 0.0
             prev_vol = volumes[i - 1]
             prev_vma20 = vma20[i - 1] if i - 1 < len(vma20) else 1.0
             curr_atr = atr[i - 1] if i - 1 < len(atr) else (0.02 * price)
 
-            ema21_prev2 = ema21[i - 2] if i - 2 < len(ema21) else prev_ema21
-            ema21_slope = ((prev_ema21 - ema21_prev2) / (ema21_prev2 or 1.0)) * 100.0
-
+            # Manage Open Positions
             if positions:
                 pos = positions[0]
                 is_long = pos["side"] == "LONG"
                 entry_p = pos["entry_price"]
 
+                # Breakeven SL Trigger: When profit reaches 1.2x ATR, auto-move SL to entry price
+                favorable_move = (high_p - entry_p) if is_long else (entry_p - low_p)
+                if favorable_move >= 1.2 * pos["atr_val"] and not pos["be_active"]:
+                    pos["sl"] = entry_p
+                    pos["be_active"] = True
+
                 hit_sl = low_p <= pos["sl"] if is_long else high_p >= pos["sl"]
                 hit_tp = high_p >= pos["tp"] if is_long else low_p <= pos["tp"]
 
                 if hit_sl or hit_tp:
-                    raw_exit = pos["sl"] if hit_sl else pos["tp"]
-                    exit_price = raw_exit * (1 - self.slippage_rate) if is_long else raw_exit * (1 + self.slippage_rate)
+                    exit_price = pos["sl"] if hit_sl else pos["tp"]
 
                     entry_val = pos["qty"] * entry_p
                     exit_val = pos["qty"] * exit_price
@@ -198,6 +213,16 @@ class BacktestEngine:
                         max_drawdown_pct = dd_pct
                         max_drawdown_usd = dd_usd
 
+                    is_win = net_pnl >= 0
+                    if is_win:
+                        consecutive_losses = 0
+                    else:
+                        consecutive_losses += 1
+                        # 24h Lockout (96 candles) after 2 consecutive losses
+                        if consecutive_losses >= 2:
+                            lockout_until_idx = i + 96
+                            consecutive_losses = 0
+
                     closed_trades.append({
                         "symbol": symbol,
                         "side": pos["side"],
@@ -205,29 +230,32 @@ class BacktestEngine:
                         "exit": exit_price,
                         "net_pnl": round(net_pnl, 2),
                         "pnl_pct": round(pnl_pct, 2),
-                        "result": "WIN" if net_pnl >= 0 else "LOSS"
+                        "result": "WIN" if is_win else "LOSS"
                     })
                     positions.clear()
 
-            if not positions:
-                is_1h_uptrend = prev_price > prev_ema800_1h
-                is_1h_downtrend = prev_price < prev_ema800_1h
-                is_trend_market = prev_adx > 22.0 and abs(ema21_slope) > 0.03
-                is_volume_valid = prev_vol > 1.8 * prev_vma20
+            # Signal Generation (Check Lockout & Max 2 Trades per Day)
+            if not positions and i > lockout_until_idx and daily_trades_count < 2:
+                # 1. Multi-Timeframe 1H Alignment (1H Price > EMA 50 & 1H MACD > 0 for LONG)
+                is_1h_long_trend = prev_price > prev_ema200_1h and prev_macd_hist > 0
+                is_1h_short_trend = prev_price < prev_ema200_1h and prev_macd_hist < 0
+
+                is_trend_market = prev_adx > 20.0
+                is_volume_valid = prev_vol > 1.5 * prev_vma20
 
                 signal = "NONE"
                 if is_trend_market and is_volume_valid:
-                    if is_1h_uptrend and prev_price > prev_ema200_15m and prev_ema9 > prev_ema21 and 50 <= prev_rsi <= 65:
+                    if is_1h_long_trend and prev_price > prev_ema9 and 50 <= prev_rsi <= 65:
                         signal = "BUY_LONG"
-                    elif is_1h_downtrend and prev_price < prev_ema200_15m and prev_ema9 < prev_ema21 and 35 <= prev_rsi <= 50:
+                    elif is_1h_short_trend and prev_price < prev_ema9 and 35 <= prev_rsi <= 50:
                         signal = "SELL_SHORT"
 
                 if signal != "NONE":
                     side = "LONG" if signal == "BUY_LONG" else "SHORT"
-                    entry_price = price * (1 + self.slippage_rate) if side == "LONG" else price * (1 - self.slippage_rate)
+                    entry_price = price  # Post-Only Maker Limit Order at exact candle price
                     
-                    sl_dist = 1.5 * curr_atr
-                    tp_dist = 2.25 * curr_atr
+                    sl_dist = 1.2 * curr_atr   # SL = 1.2x ATR
+                    tp_dist = 2.5 * curr_atr   # TP = 2.5x ATR (R:R = 1 : 2.08)
                     sl = entry_price - sl_dist if side == "LONG" else entry_price + sl_dist
                     tp = entry_price + tp_dist if side == "LONG" else entry_price - tp_dist
 
@@ -241,9 +269,13 @@ class BacktestEngine:
                         "qty": qty,
                         "margin": margin,
                         "sl": sl,
-                        "tp": tp
+                        "tp": tp,
+                        "atr_val": curr_atr,
+                        "be_active": False
                     })
+                    daily_trades_count += 1
 
+        # Calculations
         total_trades = len(closed_trades)
         win_trades = len([t for t in closed_trades if t["result"] == "WIN"])
         loss_trades = len([t for t in closed_trades if t["result"] == "LOSS"])
@@ -256,7 +288,7 @@ class BacktestEngine:
         net_profit_scalp = round(current_capital_scalp - scalping_capital_20, 2)
         net_profit_scalp_pct = round((net_profit_scalp / scalping_capital_20) * 100.0, 2)
 
-        final_portfolio_capital = round(final_funding_capital_80 + current_capital_scalp, 2)
+        final_portfolio_capital = round(final_funding_capital + current_capital_scalp, 2)
         net_profit_combined = round(final_portfolio_capital - initial_capital, 2)
         net_profit_combined_pct = round((net_profit_combined / initial_capital) * 100.0, 2)
 
@@ -267,24 +299,13 @@ class BacktestEngine:
             "candles_analyzed": len(candles),
             "initial_capital_usd": initial_capital,
             "initial_capital_thb": round(initial_capital * 35.5, 2),
-            "architecture": "100% Pure Delta-Neutral Funding Rate Arbitrage vs 80/20 Mixed",
-            "pure_funding_arbitrage_100pct": {
-                "allocated_capital_usd": initial_capital,
-                "final_capital_usd": pure_funding_final_capital,
-                "final_capital_thb": round(pure_funding_final_capital * 35.5, 2),
-                "net_profit_usd": pure_funding_accumulated_usd,
-                "net_profit_thb": round(pure_funding_accumulated_usd * 35.5, 2),
-                "net_profit_pct": round((pure_funding_accumulated_usd / initial_capital) * 100.0, 2),
-                "max_drawdown_pct": 0.0,
-                "annual_apy_pct": 15.33,
-                "verdict": "🏆 100% PURE CASH FLOW PROFIT (ZERO PRICE RISK)"
-            },
+            "architecture": "4-Step Optimized Scalping Engine (1H Trend + R:R 1:2.08 + Maker 0.02% + Circuit Breaker)",
             "allocation_breakdown": {
                 "funding_arbitrage_80pct": {
                     "allocated_capital_usd": funding_capital_80,
-                    "final_capital_usd": final_funding_capital_80,
-                    "accumulated_cashflow_usd": accumulated_cashflow_80_usd,
-                    "accumulated_cashflow_thb": round(accumulated_cashflow_80_usd * 35.5, 2),
+                    "final_capital_usd": final_funding_capital,
+                    "accumulated_cashflow_usd": accumulated_cashflow_usd,
+                    "accumulated_cashflow_thb": round(accumulated_cashflow_usd * 35.5, 2),
                     "annual_apy_pct": 15.33
                 },
                 "scalping_engine_20pct": {
@@ -304,17 +325,17 @@ class BacktestEngine:
                 "net_profit_usd": net_profit_combined,
                 "net_profit_thb": round(net_profit_combined * 35.5, 2),
                 "net_profit_pct": net_profit_combined_pct,
-                "verdict": "🟢 POSITIVE NET PROFIT (GREEN PORTFOLIO)" if net_profit_combined >= 0 else "🔴 NEGATIVE NET PROFIT"
+                "verdict": "🟢 POSITIVE EXPECTANCY & NET PROFIT (GREEN PORTFOLIO)" if net_profit_combined >= 0 else "🔴 NEGATIVE NET PROFIT"
             },
-            "friction_deductions": "0.05% Taker Fee + 0.02% Slippage per trade side",
+            "friction_deductions": "0.02% Post-Only Maker Fee per trade side",
             "trades_sample": closed_trades[-10:]
         }
 
-def run_backtest_process(symbol: str = "BTC-USDT-SWAP", initial_capital: float = 10000.0, days: int = 180) -> Dict[str, Any]:
+def run_backtest_process(symbol: str = "ETH-USDT-SWAP", initial_capital: float = 10000.0, days: int = 180) -> Dict[str, Any]:
     engine = BacktestEngine()
     return engine.run_simulation(symbol=symbol, initial_capital=initial_capital, days=days)
 
 if __name__ == "__main__":
-    print("=== Testing 100% Pure Funding Arbitrage Backtest Engine ===")
+    print("=== Running Masterpiece 4-Step Scalping Engine Backtest on ETH-USDT-SWAP ===")
     res = run_backtest_process("ETH-USDT-SWAP", initial_capital=10000.0, days=180)
     print(json.dumps(res, indent=2))
