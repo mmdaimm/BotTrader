@@ -286,6 +286,68 @@ class PaperTradingEngine:
 
         return closed_trades
 
+    def close_position_manually(self, symbol: str, current_price: float) -> dict:
+        """
+        OKX Taker Market Manual Position Close:
+        Simulates OKX Perpetual Futures 100% Market Close with 0.02% slippage & 0.05% taker fee.
+        """
+        if symbol not in self.active_positions:
+            return {"status": "ERROR", "message": f"No active position found for {symbol}"}
+
+        pos = self.active_positions.pop(symbol)
+        side = pos["side"]
+        entry_p = pos["entry_price"]
+        
+        # Apply OKX Market Order Taker Slippage (0.02%)
+        slippage = 0.0002
+        exit_price = current_price * (1 - slippage) if side == "LONG" else current_price * (1 + slippage)
+
+        entry_val = pos["qty"] * entry_p
+        exit_val = pos["qty"] * exit_price
+        gross_pnl = (exit_val - entry_val) if side == "LONG" else (entry_val - exit_val)
+        fee = (exit_val + entry_val) * self.fee_pct
+        net_pnl = gross_pnl - fee
+
+        return_amount = pos["margin_required"] + net_pnl
+        self.current_capital += return_amount
+
+        now_struct = time.localtime()
+        holding_time_sec = int(time.time() - pos.get("entry_timestamp", time.time()))
+
+        trade_record = {
+            "id": pos["id"],
+            "symbol": symbol,
+            "side": side,
+            "type": f"{side} MANUAL MARKET CLOSE",
+            "timeframe": pos.get("timeframe", "4h"),
+            "leverage": pos.get("leverage", 3),
+            "entry_price": entry_p,
+            "exit_price": round(exit_price, 4),
+            "qty": pos["qty"],
+            "order_value": round(entry_val, 2),
+            "margin_required": pos["margin_required"],
+            "sl_price": pos["sl_price"],
+            "tp_price": pos.get("tp1_target", pos["tp_price"]),
+            "net_pnl": round(net_pnl, 2),
+            "pnl_pct": round((net_pnl / pos["margin_required"]) * 100, 2),
+            "holding_duration_sec": holding_time_sec,
+            "holding_duration_formatted": f"{holding_time_sec // 3600}h {(holding_time_sec % 3600) // 60}m",
+            "entry_time": pos["entry_time"],
+            "exit_time": time.strftime("%Y-%m-%d %H:%M:%S", now_struct),
+            "day_of_week": pos.get("day_of_week", time.strftime("%A", now_struct)),
+            "hour_of_day": now_struct.tm_hour,
+            "market_snapshot": pos.get("market_snapshot", {})
+        }
+
+        self.trade_history.insert(0, trade_record)
+        self._save_state()
+
+        return {
+            "status": "SUCCESS",
+            "message": f"Closed {side} position for {symbol} at ${exit_price:,.4f} (Net PnL: ${net_pnl:,.2f})",
+            "trade_record": trade_record
+        }
+
     def get_summary(self) -> dict:
         """Return overall Paper Trading statistics."""
         win_trades = [t for t in self.trade_history if t["net_pnl"] > 0]

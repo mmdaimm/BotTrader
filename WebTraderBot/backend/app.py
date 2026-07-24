@@ -240,6 +240,29 @@ def sim_buy(symbol: str = Query("BTC-USDT-SWAP"), side: str = Query("LONG")):
         return {"status": "SUCCESS", "message": f"Simulated Paper {side} Order placed for {symbol} at ${price:,.2f}"}
     return {"status": "ERROR", "message": f"Failed to fetch market data for {symbol}"}
 
+@app.post("/api/close-position")
+def close_position_manually(symbol: str = Query(...)):
+    """
+    OKX Perpetual Market Close Endpoint.
+    Manually close an active position for the requested symbol using real-time market price.
+    """
+    candles = bot.client.get_candles(symbol=symbol, resolution="4H", limit=10)
+    if not candles:
+        return {"status": "ERROR", "message": f"Failed to fetch market price for {symbol}"}
+    
+    current_price = candles[-1]["close"]
+    res = bot.paper_engine.close_position_manually(symbol, current_price)
+    if res.get("status") == "SUCCESS":
+        trade = res["trade_record"]
+        bot.notifier.send_message(
+            f"<b>🚨 [MANUAL OKX MARKET CLOSE]</b>\n"
+            f"Asset: {symbol}\n"
+            f"Side: {trade['side']}\n"
+            f"Exit Price: ${trade['exit_price']:,.4f}\n"
+            f"Net PnL: ${trade['net_pnl']} ({trade['pnl_pct']}%)"
+        )
+    return res
+
 if __name__ == "__main__":
     import uvicorn
     port = int(os.getenv("PORT", 8080))

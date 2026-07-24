@@ -330,6 +330,24 @@ export default function Dashboard() {
     fetchCandles();
   };
 
+  const closePosition = async (symbol: string) => {
+    const coinTag = symbol.split('-')[0];
+    if (confirm(`⚡ ยืนยันการปิดออเดอร์ทันที (OKX Taker Market Close 100%) สำหรับ ${coinTag} หรือไม่?`)) {
+      try {
+        const res = await fetch(`${backendUrl}/api/close-position?symbol=${symbol}`, { method: 'POST' });
+        const resData = await res.json();
+        if (resData.status === 'SUCCESS') {
+          alert(`🟢 ${resData.message}`);
+          fetchStatus();
+        } else {
+          alert(`🔴 ${resData.message}`);
+        }
+      } catch (err) {
+        alert(`🔴 เกิดข้อผิดพลาดในการปิดออเดอร์: ${err}`);
+      }
+    }
+  };
+
   const pairs = data?.pair_results || {};
   const summary = data?.paper_summary;
 
@@ -859,6 +877,7 @@ export default function Dashboard() {
                 <th style={{ paddingBottom: '6px' }}>Entry</th>
                 <th style={{ paddingBottom: '6px' }}>Unrealized PnL (กำไร/ขาดทุนเรียลไทม์)</th>
                 <th style={{ paddingBottom: '6px' }}>SL / TP1</th>
+                <th style={{ paddingBottom: '6px' }}>Action (จัดการออเดอร์)</th>
               </tr>
             </thead>
             <tbody>
@@ -907,12 +926,30 @@ export default function Dashboard() {
                           {isTp1Done ? 'RUN (TP1 Done 🟢)' : (pos.tp1_target ? `$${pos.tp1_target.toLocaleString()}` : (pos.tp_price ? `$${pos.tp_price.toLocaleString()}` : 'RUN'))}
                         </span>
                       </td>
+                      <td style={{ padding: '6px 0' }}>
+                        <button
+                          onClick={() => closePosition(pos.symbol)}
+                          style={{
+                            background: 'rgba(255, 59, 105, 0.15)',
+                            border: '1px solid rgba(255, 59, 105, 0.4)',
+                            color: '#ff3b69',
+                            padding: '4px 10px',
+                            borderRadius: '6px',
+                            fontWeight: '700',
+                            fontSize: '10px',
+                            cursor: 'pointer',
+                            boxShadow: '0 2px 8px rgba(255, 59, 105, 0.2)'
+                          }}
+                        >
+                          ⚡ Market Close
+                        </button>
+                      </td>
                     </tr>
                   );
                 })
               ) : (
                 <tr>
-                  <td colSpan={5} style={{ padding: '16px 0', color: '#6b7280', textAlign: 'center' }}>No active positions</td>
+                  <td colSpan={6} style={{ padding: '16px 0', color: '#6b7280', textAlign: 'center' }}>No active positions</td>
                 </tr>
               )}
             </tbody>
