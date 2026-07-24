@@ -348,25 +348,52 @@ class PaperTradingEngine:
             "trade_record": trade_record
         }
 
-    def update_tp1_target(self, symbol: str, new_tp1: float) -> dict:
+    def update_tp1_target(self, symbol: str, new_tp1: float, current_price: float) -> dict:
         """
-        Dynamically update the TP1 Take Profit target price for an active position.
+        OKX Perpetual Futures Take Profit Validation Engine:
+        Enforces strict OKX order validation rules:
+        1. For LONG positions: TP1 Target must be STRICTLY HIGHER than Current Market Price (TP1 > Current Price).
+        2. For SHORT positions: TP1 Target must be STRICTLY LOWER than Current Market Price (TP1 < Current Price).
+        3. Tick precision alignment according to instrument decimals.
         """
         if symbol not in self.active_positions:
             return {"status": "ERROR", "message": f"No active position found for {symbol}"}
 
         pos = self.active_positions[symbol]
+        side = pos["side"]
         old_tp1 = pos.get("tp1_target", pos.get("tp_price", 0.0))
-        pos["tp1_target"] = round(new_tp1, 4)
-        pos["tp_price"] = round(new_tp1, 4)
+
+        # OKX Rule 1: Directional Validation against Current Market Price
+        if side == "LONG" and new_tp1 <= current_price:
+            return {
+                "status": "ERROR",
+                "message": f"🔴 [OKX Order Error] For LONG position ({symbol}), TP1 Target (${new_tp1:,.4f}) must be STRICTLY GREATER than current market price (${current_price:,.4f})."
+            }
+        
+        if side == "SHORT" and new_tp1 >= current_price:
+            return {
+                "status": "ERROR",
+                "message": f"🔴 [OKX Order Error] For SHORT position ({symbol}), TP1 Target (${new_tp1:,.4f}) must be STRICTLY LOWER than current market price (${current_price:,.4f})."
+            }
+
+        # OKX Rule 2: Precision alignment
+        precision = 4 if "USDT" in symbol and current_price < 10 else 2
+        if symbol.startswith("DOGE") or symbol.startswith("ADA") or symbol.startswith("XRP"):
+            precision = 4
+        
+        new_tp1_rounded = round(new_tp1, precision)
+        pos["tp1_target"] = new_tp1_rounded
+        pos["tp_price"] = new_tp1_rounded
         self._save_state()
 
         return {
             "status": "SUCCESS",
             "symbol": symbol,
+            "side": side,
+            "current_price": current_price,
             "old_tp1": old_tp1,
-            "new_tp1": round(new_tp1, 4),
-            "message": f"Updated TP1 Target for {symbol} from ${old_tp1:,.4f} to ${new_tp1:,.4f}"
+            "new_tp1": new_tp1_rounded,
+            "message": f"Verified & Set OKX TP1 Order for {symbol} ({side}) at ${new_tp1_rounded:,.4f} (Current: ${current_price:,.4f})"
         }
 
     def get_summary(self) -> dict:

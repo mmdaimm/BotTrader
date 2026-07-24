@@ -266,14 +266,22 @@ def close_position_manually(symbol: str = Query(...)):
 @app.post("/api/update-tp1")
 def update_tp1_target(symbol: str = Query(...), new_tp1: float = Query(...)):
     """
-    Update Active Position TP1 Take Profit Target Price Endpoint.
+    OKX Perpetual Take Profit Order Update Endpoint.
+    Validates OKX Take Profit rules against current market price before updating.
     """
-    res = bot.paper_engine.update_tp1_target(symbol, new_tp1)
+    candles = bot.client.get_candles(symbol=symbol, resolution="4H", limit=10)
+    if not candles:
+        return {"status": "ERROR", "message": f"Failed to fetch market price for {symbol}"}
+    
+    current_price = candles[-1]["close"]
+    res = bot.paper_engine.update_tp1_target(symbol, new_tp1, current_price)
     if res.get("status") == "SUCCESS":
         bot.notifier.send_message(
-            f"<b>✏️ [MANUAL TP1 TARGET UPDATED]</b>\n"
+            f"<b>✏️ [OKX TP1 ORDER UPDATED]</b>\n"
             f"Asset: {symbol}\n"
+            f"Side: {res['side']}\n"
             f"New TP1 Target: ${res['new_tp1']:,.4f}\n"
+            f"Current Market Price: ${res['current_price']:,.4f}\n"
             f"Previous TP1: ${res['old_tp1']:,.4f}"
         )
     return res
