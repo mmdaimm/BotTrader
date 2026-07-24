@@ -516,14 +516,14 @@ export default function Dashboard() {
               <div style={{ fontSize: '10px', color: '#9ca3af' }}>+{fundingCashflowThb} THB</div>
             </div>
             <div>
-              <div style={{ color: '#9ca3af' }}>20% Scalping Net PnL</div>
+              <div style={{ color: '#9ca3af' }}>20% 4H Swing Net PnL</div>
               <div style={{ fontWeight: '700', color: scalpNetUsd >= 0 ? '#00f090' : '#ff3b69', fontSize: '14px' }}>
                 ${scalpNetUsd} USD
               </div>
               <div style={{ fontSize: '10px', color: '#9ca3af' }}>{scalpTradesCount} Trades</div>
             </div>
             <div>
-              <div style={{ color: '#9ca3af' }}>Scalp Win Rate</div>
+              <div style={{ color: '#9ca3af' }}>4H Swing Win Rate</div>
               <div style={{ fontWeight: '700', color: '#f59e0b', fontSize: '14px' }}>
                 {scalpWinRate}%
               </div>
