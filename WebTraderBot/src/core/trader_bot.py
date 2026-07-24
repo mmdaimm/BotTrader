@@ -113,10 +113,10 @@ class TraderBot:
         prev_candle_ts = candles[-2]["timestamp"]
 
         # 🟢 LONG 4H Swing Signal Conditions
-        is_long_swing = prev_price > ema200_4h and curr_st["direction"] == 1 and st_turned_green and adx_val > 20.0
+        is_long_swing = prev_price > ema200_4h and curr_st["direction"] == 1 and st_turned_green and adx_val > 18.0
         
         # 🔴 SHORT 4H Swing Signal Conditions
-        is_short_swing = prev_price < ema200_4h and curr_st["direction"] == -1 and st_turned_red and adx_val > 20.0
+        is_short_swing = prev_price < ema200_4h and curr_st["direction"] == -1 and st_turned_red and adx_val > 18.0
         
         if is_long_swing:
             risk_params = self.risk_engine.calculate_position_sizing(self.paper_engine.current_capital, current_price, atr_val, side="LONG", sl_multiplier=2.0, tp_multiplier=3.5)

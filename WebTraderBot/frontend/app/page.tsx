@@ -167,6 +167,7 @@ export default function Dashboard() {
   const [selectedLogCoins, setSelectedLogCoins] = useState<string[]>(['BTC', 'ETH', 'SOL', 'DOGE', 'LINK']);
 
   // Backtest State
+  const [backtestDays, setBacktestDays] = useState<number>(180);
   const [backtestRunning, setBacktestRunning] = useState<boolean>(false);
   const [backtestData, setBacktestData] = useState<BacktestResult | null>(null);
 
@@ -258,7 +259,7 @@ export default function Dashboard() {
     setBacktestRunning(true);
     setBacktestData(null);
     try {
-      const res = await fetch(`${backendUrl}/api/backtest?symbol=${chartSymbol}&days=180`);
+      const res = await fetch(`${backendUrl}/api/backtest?symbol=${chartSymbol}&days=${backtestDays}`);
       const data = await res.json();
       const taskId = data.task_id;
 
@@ -414,19 +415,40 @@ export default function Dashboard() {
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <button onClick={runBacktest} disabled={backtestRunning} style={{
-            background: 'linear-gradient(135deg, #a855f7, #6366f1)',
-            color: 'white',
-            border: 'none',
-            padding: '8px 16px',
-            borderRadius: '8px',
-            fontWeight: '700',
-            fontSize: '12px',
-            cursor: backtestRunning ? 'not-allowed' : 'pointer',
-            boxShadow: '0 4px 15px rgba(168, 85, 247, 0.4)'
-          }}>
-            {backtestRunning ? '⏳ Backtesting...' : `🧪 Backtest ${chartSymbol.split('-')[0]} (6 Months)`}
-          </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <select 
+              value={backtestDays} 
+              onChange={(e) => setBacktestDays(Number(e.target.value))}
+              style={{
+                background: 'rgba(168, 85, 247, 0.15)',
+                border: '1px solid rgba(168, 85, 247, 0.4)',
+                color: '#d8b4fe',
+                padding: '7px 8px',
+                borderRadius: '8px',
+                fontSize: '11px',
+                fontWeight: '700',
+                cursor: 'pointer',
+                outline: 'none'
+              }}
+            >
+              <option value={180} style={{ background: '#0a0d14', color: '#fff' }}>6 Months (180d)</option>
+              <option value={365} style={{ background: '#0a0d14', color: '#fff' }}>1 Year (365d)</option>
+            </select>
+
+            <button onClick={runBacktest} disabled={backtestRunning} style={{
+              background: 'linear-gradient(135deg, #a855f7, #6366f1)',
+              color: 'white',
+              border: 'none',
+              padding: '8px 16px',
+              borderRadius: '8px',
+              fontWeight: '700',
+              fontSize: '12px',
+              cursor: backtestRunning ? 'not-allowed' : 'pointer',
+              boxShadow: '0 4px 15px rgba(168, 85, 247, 0.4)'
+            }}>
+              {backtestRunning ? '⏳ Backtesting...' : `🧪 Backtest ${chartSymbol.split('-')[0]} (${backtestDays === 365 ? '1 Year' : '6 Months'})`}
+            </button>
+          </div>
 
           <button onClick={startBot} style={{
             background: 'rgba(0, 240, 144, 0.15)',
