@@ -835,6 +835,7 @@ export default function Dashboard() {
                 <th style={{ paddingBottom: '6px' }}>Symbol</th>
                 <th style={{ paddingBottom: '6px' }}>Side</th>
                 <th style={{ paddingBottom: '6px' }}>Entry</th>
+                <th style={{ paddingBottom: '6px' }}>Profit (PnL)</th>
                 <th style={{ paddingBottom: '6px' }}>SL / TP1</th>
               </tr>
             </thead>
@@ -842,6 +843,21 @@ export default function Dashboard() {
               {data?.active_positions && data.active_positions.length > 0 ? (
                 data.active_positions.map((pos) => {
                   const isLong = pos.side === 'LONG';
+                  const item = pairs[pos.symbol];
+                  const lastPrice = item?.last_price;
+                  let pnl = 0;
+                  let pnlPct = 0;
+
+                  if (lastPrice && pos.entry_price) {
+                    if (pos.side === 'LONG') {
+                      pnl = (lastPrice - pos.entry_price) * pos.qty;
+                    } else {
+                      pnl = (pos.entry_price - lastPrice) * pos.qty;
+                    }
+                    pnlPct = pos.margin_required > 0 ? (pnl / pos.margin_required) * 100 : 0;
+                  }
+                  const isProfit = pnl >= 0;
+
                   return (
                     <tr key={pos.id} style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.05)' }}>
                       <td style={{ padding: '6px 0', fontWeight: 'bold' }}>{pos.symbol.split('-')[0]}</td>
@@ -858,6 +874,9 @@ export default function Dashboard() {
                         </span>
                       </td>
                       <td style={{ padding: '6px 0', fontFamily: 'monospace' }}>${pos.entry_price?.toLocaleString()}</td>
+                      <td style={{ padding: '6px 0', fontFamily: 'monospace', fontWeight: '700', color: isProfit ? '#00f090' : '#ff3b69' }}>
+                        {isProfit ? '+' : ''}${pnl.toFixed(2)} ({isProfit ? '+' : ''}{pnlPct.toFixed(2)}%)
+                      </td>
                       <td style={{ padding: '6px 0', fontFamily: 'monospace' }}>
                         <span style={{ color: '#ff3b69' }}>${pos.sl_price?.toLocaleString()}</span> / <span style={{ color: '#00f090' }}>${pos.tp1_target ? pos.tp1_target.toLocaleString() : 'RUN'}</span>
                       </td>
@@ -866,7 +885,7 @@ export default function Dashboard() {
                 })
               ) : (
                 <tr>
-                  <td colSpan={4} style={{ padding: '16px 0', color: '#6b7280', textAlign: 'center' }}>No active positions</td>
+                  <td colSpan={5} style={{ padding: '16px 0', color: '#6b7280', textAlign: 'center' }}>No active positions</td>
                 </tr>
               )}
             </tbody>
