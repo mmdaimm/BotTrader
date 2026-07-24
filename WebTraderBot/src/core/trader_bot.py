@@ -15,9 +15,19 @@ class TraderBot:
         self.symbols = symbols or [
             "BTC-USDT-SWAP",
             "ETH-USDT-SWAP",
-            "SOL-USDT-SWAP",
             "XRP-USDT-SWAP",
-            "DOGE-USDT-SWAP"
+            "LTC-USDT-SWAP",
+            "BCH-USDT-SWAP",
+            "ADA-USDT-SWAP",
+            "SOL-USDT-SWAP",
+            "DOGE-USDT-SWAP",
+            "LINK-USDT-SWAP",
+            "DOT-USDT-SWAP",
+            "ATOM-USDT-SWAP",
+            "ETC-USDT-SWAP",
+            "XLM-USDT-SWAP",
+            "TRX-USDT-SWAP",
+            "AVAX-USDT-SWAP"
         ]
         self.resolution = resolution  # "240" (4H)
         self.timeframe_str = "4h"

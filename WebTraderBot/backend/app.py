@@ -59,7 +59,7 @@ VETERAN_SYMBOLS = [
 
 bot = TraderBot(
     symbols=VETERAN_SYMBOLS,
-    resolution="15",
+    resolution="240",
     initial_capital=10000.0
 )
 quant_analyzer = QuantAnalyzer()
