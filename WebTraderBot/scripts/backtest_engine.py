@@ -138,7 +138,7 @@ class BacktestEngine:
         positions = []
         closed_trades = []
 
-        warmup = 200
+        warmup = 50
         total_days_simulated = (len(candles_4h) - warmup) * 4 / 24
 
         daily_cashflow_per_day = funding_capital_80 * (self.daily_funding_yield_pct / 100.0)
@@ -156,7 +156,7 @@ class BacktestEngine:
             prev_ema200 = ema200_4h[i - 1]
             prev_st = supertrend_4h[i - 1]
             prev_st_before = supertrend_4h[i - 2] if i - 2 >= 0 else prev_st
-            prev_adx = adx_4h[i - 1] if i - 1 < len(adx_4h) else 20.0
+            prev_adx = adx_4h[i - 1] if i - 1 < len(adx_4h) else 18.0
             curr_atr = atr_4h[i - 1] if i - 1 < len(atr_4h) else (0.03 * price)
 
             st_turned_green = prev_st["direction"] == 1 and prev_st_before["direction"] == -1
@@ -235,10 +235,10 @@ class BacktestEngine:
                     })
                     positions.clear()
 
-            # Signal Generation: 4H Swing Entry (Price > EMA200 + Supertrend Green + ADX > 20)
+            # Signal Generation: 4H Swing Entry (Price > EMA200 + Supertrend Green + ADX > 18)
             if not positions:
-                is_long_swing = prev_price > prev_ema200 and prev_st["direction"] == 1 and prev_adx > 20.0
-                is_short_swing = prev_price < prev_ema200 and prev_st["direction"] == -1 and prev_adx > 20.0
+                is_long_swing = prev_price > prev_ema200 and prev_st["direction"] == 1 and prev_adx > 18.0
+                is_short_swing = prev_price < prev_ema200 and prev_st["direction"] == -1 and prev_adx > 18.0
 
                 signal = "NONE"
                 if is_long_swing and st_turned_green:
