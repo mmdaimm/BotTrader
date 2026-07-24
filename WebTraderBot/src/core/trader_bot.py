@@ -96,9 +96,21 @@ class TraderBot:
                 "reason": f"Cooldown Active (Lockout remaining: {rem_min} mins)"
             }
 
+        # If position is already active, skip new signal alerts
+        if symbol in self.paper_engine.active_positions:
+            return {
+                "symbol": symbol,
+                "signal": "NONE",
+                "timeframe": self.timeframe_str,
+                "market_snapshot": market_snapshot,
+                "reason": f"Position already active for {symbol}"
+            }
+
         # 4H Supertrend Direction Reversal
         st_turned_green = curr_st["direction"] == 1 and prev_st["direction"] == -1
         st_turned_red = curr_st["direction"] == -1 and prev_st["direction"] == 1
+
+        prev_candle_ts = candles[-2]["timestamp"]
 
         # 🟢 LONG 4H Swing Signal Conditions
         is_long_swing = prev_price > ema200_4h and curr_st["direction"] == 1 and st_turned_green and adx_val > 20.0
@@ -108,7 +120,7 @@ class TraderBot:
         
         if is_long_swing:
             risk_params = self.risk_engine.calculate_position_sizing(self.paper_engine.current_capital, current_price, atr_val, side="LONG", sl_multiplier=2.0, tp_multiplier=3.5)
-            sig_key = f"4H-LONG-{current_price}"
+            sig_key = f"4H-LONG-{prev_candle_ts}"
             if self.last_signals_sent.get(symbol) != sig_key:
                 self.notifier.send_signal_alert(symbol, current_price, risk_params)
                 self.last_signals_sent[symbol] = sig_key
@@ -130,7 +142,7 @@ class TraderBot:
 
         elif is_short_swing:
             risk_params = self.risk_engine.calculate_position_sizing(self.paper_engine.current_capital, current_price, atr_val, side="SHORT", sl_multiplier=2.0, tp_multiplier=3.5)
-            sig_key = f"4H-SHORT-{current_price}"
+            sig_key = f"4H-SHORT-{prev_candle_ts}"
             if self.last_signals_sent.get(symbol) != sig_key:
                 self.notifier.send_signal_alert(symbol, current_price, risk_params)
                 self.last_signals_sent[symbol] = sig_key
