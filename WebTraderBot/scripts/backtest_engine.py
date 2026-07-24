@@ -403,9 +403,9 @@ class BacktestEngine:
             ]
         }
 
-def run_backtest_process(symbol: str = "BTC-USDT-SWAP", initial_capital: float = 10000.0, days: int = 180) -> Dict[str, Any]:
+def run_backtest_process(symbol: str = "BTC-USDT-SWAP", days: int = 180, initial_capital: float = 10000.0) -> Dict[str, Any]:
     engine = BacktestEngine()
-    return engine.run_portfolio_simulation(symbols=TOP_5_SWING_SYMBOLS, initial_capital=initial_capital, days=days)
+    return engine.run_simulation(symbol=symbol, initial_capital=initial_capital, days=days)
 
 if __name__ == "__main__":
     print("=== Running Production 4H Swing Trading Portfolio Backtest ===")
