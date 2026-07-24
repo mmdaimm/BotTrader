@@ -263,6 +263,21 @@ def close_position_manually(symbol: str = Query(...)):
         )
     return res
 
+@app.post("/api/update-tp1")
+def update_tp1_target(symbol: str = Query(...), new_tp1: float = Query(...)):
+    """
+    Update Active Position TP1 Take Profit Target Price Endpoint.
+    """
+    res = bot.paper_engine.update_tp1_target(symbol, new_tp1)
+    if res.get("status") == "SUCCESS":
+        bot.notifier.send_message(
+            f"<b>✏️ [MANUAL TP1 TARGET UPDATED]</b>\n"
+            f"Asset: {symbol}\n"
+            f"New TP1 Target: ${res['new_tp1']:,.4f}\n"
+            f"Previous TP1: ${res['old_tp1']:,.4f}"
+        )
+    return res
+
 if __name__ == "__main__":
     import uvicorn
     port = int(os.getenv("PORT", 8080))

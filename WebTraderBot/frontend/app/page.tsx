@@ -348,6 +348,29 @@ export default function Dashboard() {
     }
   };
 
+  const editTp1Target = async (symbol: string, currentTp1: number) => {
+    const coinTag = symbol.split('-')[0];
+    const inputVal = prompt(`✏️ กำหนดเป้าหมายราคา TP1 ใหม่สำหรับ ${coinTag} (เป้าหมายปัจจุบัน: $${currentTp1?.toLocaleString()}):`, currentTp1 ? String(currentTp1) : '');
+    if (!inputVal) return;
+    const newTp1 = parseFloat(inputVal);
+    if (isNaN(newTp1) || newTp1 <= 0) {
+      alert('🔴 กรุณาระบุตัวเลขราคาเป้าหมายที่ถูกต้อง');
+      return;
+    }
+    try {
+      const res = await fetch(`${backendUrl}/api/update-tp1?symbol=${symbol}&new_tp1=${newTp1}`, { method: 'POST' });
+      const resData = await res.json();
+      if (resData.status === 'SUCCESS') {
+        alert(`🟢 ${resData.message}`);
+        fetchStatus();
+      } else {
+        alert(`🔴 ${resData.message}`);
+      }
+    } catch (err) {
+      alert(`🔴 เกิดข้อผิดพลาดในการปรับราคา TP1: ${err}`);
+    }
+  };
+
   const pairs = data?.pair_results || {};
   const summary = data?.paper_summary;
 
@@ -923,7 +946,29 @@ export default function Dashboard() {
                       </td>
                       <td style={{ padding: '6px 0', fontFamily: 'monospace' }}>
                         <span style={{ color: '#ff3b69' }}>${pos.sl_price?.toLocaleString()}</span> / <span style={{ color: '#00f090' }}>
-                          {isTp1Done ? 'RUN (TP1 Done 🟢)' : (pos.tp1_target ? `$${pos.tp1_target.toLocaleString()}` : (pos.tp_price ? `$${pos.tp_price.toLocaleString()}` : 'RUN'))}
+                          {isTp1Done ? (
+                            'RUN (TP1 Done 🟢)'
+                          ) : (
+                            <>
+                              {pos.tp1_target ? `$${pos.tp1_target.toLocaleString()}` : (pos.tp_price ? `$${pos.tp_price.toLocaleString()}` : 'RUN')}{' '}
+                              <button
+                                onClick={() => editTp1Target(pos.symbol, pos.tp1_target || pos.tp_price || 0)}
+                                title="แก้ไขเป้าหมายราคา TP1"
+                                style={{
+                                  background: 'rgba(0, 240, 144, 0.15)',
+                                  border: '1px solid rgba(0, 240, 144, 0.4)',
+                                  color: '#00f090',
+                                  padding: '1px 5px',
+                                  borderRadius: '4px',
+                                  fontSize: '9px',
+                                  cursor: 'pointer',
+                                  marginLeft: '4px'
+                                }}
+                              >
+                                ✏️
+                              </button>
+                            </>
+                          )}
                         </span>
                       </td>
                       <td style={{ padding: '6px 0' }}>

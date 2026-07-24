@@ -348,6 +348,27 @@ class PaperTradingEngine:
             "trade_record": trade_record
         }
 
+    def update_tp1_target(self, symbol: str, new_tp1: float) -> dict:
+        """
+        Dynamically update the TP1 Take Profit target price for an active position.
+        """
+        if symbol not in self.active_positions:
+            return {"status": "ERROR", "message": f"No active position found for {symbol}"}
+
+        pos = self.active_positions[symbol]
+        old_tp1 = pos.get("tp1_target", pos.get("tp_price", 0.0))
+        pos["tp1_target"] = round(new_tp1, 4)
+        pos["tp_price"] = round(new_tp1, 4)
+        self._save_state()
+
+        return {
+            "status": "SUCCESS",
+            "symbol": symbol,
+            "old_tp1": old_tp1,
+            "new_tp1": round(new_tp1, 4),
+            "message": f"Updated TP1 Target for {symbol} from ${old_tp1:,.4f} to ${new_tp1:,.4f}"
+        }
+
     def get_summary(self) -> dict:
         """Return overall Paper Trading statistics."""
         win_trades = [t for t in self.trade_history if t["net_pnl"] > 0]
