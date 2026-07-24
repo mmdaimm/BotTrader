@@ -59,14 +59,24 @@ class OKXClient:
     def get_candles(self, symbol: str = "BTC-USDT-SWAP", resolution: str = "15", limit: int = 300) -> list:
         """
         Fetch OHLCV candlestick historical data for Perpetual Swap instruments.
-        Supports automatic fail-safe fallback to global high-liquidity feeds if okx.com domain is ISP-restricted.
+        Supports 5m, 15m, 1H (60), and 4H (240) intervals with failover.
         """
         global_symbol = SYMBOL_MAP.get(symbol, symbol.replace("-USDT-SWAP", "USDT"))
+        res_str = str(resolution).lower().replace("m", "").replace("h", "")
+
+        if str(resolution).lower() in ["4h", "240"]:
+            okx_bar = "4H"
+            binance_interval = "4h"
+        elif str(resolution).lower() in ["1h", "60"]:
+            okx_bar = "1H"
+            binance_interval = "1h"
+        else:
+            okx_bar = f"{res_str}m"
+            binance_interval = f"{res_str}m"
         
         # Primary OKX API v5 Attempt
         try:
-            bar_param = f"{resolution}m"
-            url = f"{self.host}/api/v5/market/candles?instId={symbol}&bar={bar_param}&limit={limit}"
+            url = f"{self.host}/api/v5/market/candles?instId={symbol}&bar={okx_bar}&limit={limit}"
             req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
             with urllib.request.urlopen(req, timeout=3) as resp:
                 data = json.loads(resp.read().decode())
@@ -88,7 +98,7 @@ class OKXClient:
 
         # Fail-safe Fallback: Global High-Liquidity Feed (Binance Futures/Spot)
         try:
-            url = f"https://api.binance.com/api/v3/klines?symbol={global_symbol}&interval={resolution}m&limit={limit}"
+            url = f"https://api.binance.com/api/v3/klines?symbol={global_symbol}&interval={binance_interval}&limit={limit}"
             req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
             with urllib.request.urlopen(req, timeout=5) as resp:
                 data = json.loads(resp.read().decode())
@@ -104,5 +114,5 @@ class OKXClient:
                     })
                 return candles
         except Exception as e:
-            print(f"[OKXClient] Error fetching candles for {symbol} ({global_symbol}): {e}")
+            print(f"[OKXClient] Fallback candle fetch exception for {symbol} ({resolution}): {e}")
             return []
