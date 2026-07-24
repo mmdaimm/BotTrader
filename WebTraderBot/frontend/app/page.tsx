@@ -807,7 +807,7 @@ export default function Dashboard() {
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', paddingBottom: '8px', borderBottom: '1px solid rgba(255, 255, 255, 0.05)' }}>
               <span style={{ color: '#9ca3af' }}>Macro Filter</span>
-              <span style={{ fontWeight: '700', color: '#00f090' }}>Supertrend 10,3.0 + ADX > 20</span>
+              <span style={{ fontWeight: '700', color: '#00f090' }}>Supertrend 10,3.0 + ADX &gt; 20</span>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', paddingBottom: '8px', borderBottom: '1px solid rgba(255, 255, 255, 0.05)' }}>
               <span style={{ color: '#9ca3af' }}>Partial TP Architecture</span>
