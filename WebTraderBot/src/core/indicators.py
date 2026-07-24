@@ -155,3 +155,54 @@ class TechnicalIndicators:
             cum_vol += vol
             vwap.append(cum_tp_vol / cum_vol if cum_vol > 0 else tp)
         return vwap
+
+    @staticmethod
+    def calculate_supertrend(candles: list, period: int = 10, multiplier: float = 3.0) -> list:
+        """
+        Calculate Supertrend Indicator (GREEN = +1, RED = -1).
+        Returns a list of dicts: [{"supertrend": float, "direction": int ("+1" GREEN, "-1" RED)}]
+        """
+        if not candles or len(candles) < period:
+            return [{"supertrend": 0.0, "direction": 1}] * (len(candles) if candles else 0)
+
+        atr_list = TechnicalIndicators.calculate_atr(candles, period)
+        res = []
+        
+        final_upperband = 0.0
+        final_lowerband = 0.0
+        prev_dir = 1
+        
+        for i in range(len(candles)):
+            c = candles[i]
+            hl2 = (c["high"] + c["low"]) / 2.0
+            atr_val = atr_list[i]
+            
+            basic_upperband = hl2 + (multiplier * atr_val)
+            basic_lowerband = hl2 - (multiplier * atr_val)
+            
+            if i == 0:
+                final_upperband = basic_upperband
+                final_lowerband = basic_lowerband
+                prev_dir = 1
+            else:
+                prev_close = candles[i-1]["close"]
+                
+                if basic_upperband < final_upperband or prev_close > final_upperband:
+                    final_upperband = basic_upperband
+                
+                if basic_lowerband > final_lowerband or prev_close < final_lowerband:
+                    final_lowerband = basic_lowerband
+                
+                if c["close"] > final_upperband:
+                    prev_dir = 1
+                elif c["close"] < final_lowerband:
+                    prev_dir = -1
+                    
+            st_val = final_lowerband if prev_dir == 1 else final_upperband
+            res.append({
+                "supertrend": round(st_val, 4),
+                "direction": prev_dir
+            })
+            
+        return res
+

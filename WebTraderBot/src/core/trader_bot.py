@@ -1,6 +1,6 @@
 """
 Trading Bot Engine Loop with OKX Perpetual Futures & Dual-Direction Trading (LONG & SHORT)
-Enforces 80/20 Institutional Capital Allocation & Multi-Timeframe (1H Macro Trend + 15m Confluence) Filter.
+Enforces 80/20 Institutional Capital Allocation & 4H Swing Trading Engine (Supertrend 10, 3.0 + EMA 50/200 4H).
 """
 
 from src.core.okx_client import OKXClient
@@ -10,16 +10,21 @@ from src.core.telegram_bot import TelegramNotifier
 from src.core.paper_trading import PaperTradingEngine
 
 class TraderBot:
-    def __init__(self, symbols: list = None, resolution: str = "15", initial_capital: float = 10000.0):
+    def __init__(self, symbols: list = None, resolution: str = "240", initial_capital: float = 10000.0):
         self.symbols = symbols or [
             "BTC-USDT-SWAP",
             "ETH-USDT-SWAP",
-            "SOL-USDT-SWAP",
             "XRP-USDT-SWAP",
-            "DOGE-USDT-SWAP"
+            "LTC-USDT-SWAP",
+            "BCH-USDT-SWAP",
+            "ADA-USDT-SWAP",
+            "SOL-USDT-SWAP",
+            "DOGE-USDT-SWAP",
+            "LINK-USDT-SWAP",
+            "DOT-USDT-SWAP"
         ]
-        self.resolution = resolution
-        self.timeframe_str = f"{resolution}m"
+        self.resolution = resolution  # "240" (4H)
+        self.timeframe_str = "4h"
         self.client = OKXClient()
         self.risk_engine = RiskEngine()
         self.notifier = TelegramNotifier()
@@ -27,74 +32,53 @@ class TraderBot:
         # 80/20 Institutional Capital Allocation
         self.initial_capital = initial_capital
         self.funding_capital_80 = initial_capital * 0.80  # 80% Weight ($8,000)
-        self.scalping_capital_20 = initial_capital * 0.20 # 20% Weight ($2,000)
+        self.swing_capital_20 = initial_capital * 0.20   # 20% Weight ($2,000)
         
-        self.paper_engine = PaperTradingEngine(initial_capital=self.scalping_capital_20)
+        self.paper_engine = PaperTradingEngine(initial_capital=self.swing_capital_20)
         self.trading_mode = "PAPER"  # "PAPER" or "LIVE"
         self.bot_state = "RUNNING"   # "RUNNING", "PAUSED", "ERROR"
         self.last_signals_sent = {}  # { symbol: signal_key }
 
     def evaluate_pair_signal(self, symbol: str, candles: list) -> dict:
+        """Evaluate 4H Swing Trading Signal (Supertrend 10, 3.0 + EMA 50/200 4H)."""
         if not candles or len(candles) < 200:
-            return {"symbol": symbol, "signal": "NONE", "reason": "Insufficient candles"}
+            return {"symbol": symbol, "signal": "NONE", "reason": "Insufficient 4H candles"}
             
         closes = [c["close"] for c in candles]
-        volumes = [c["volume"] for c in candles]
         
-        ema800_1h = TechnicalIndicators.calculate_ema(closes, 800)[-1] if len(closes) >= 800 else TechnicalIndicators.calculate_ema(closes, 200)[-1]
-        ema200 = TechnicalIndicators.calculate_ema(closes, 200)[-1]
-        ema9 = TechnicalIndicators.calculate_ema(closes, 9)[-1]
-        ema21_list = TechnicalIndicators.calculate_ema(closes, 21)
-        ema21 = ema21_list[-1]
-        prev_ema21 = ema21_list[-2] if len(ema21_list) >= 2 else ema21
-        ema21_slope = ((ema21 - prev_ema21) / (prev_ema21 or 1.0)) * 100.0
-
-        rsi = TechnicalIndicators.calculate_rsi(closes, 14)[-1]
-        adx = TechnicalIndicators.calculate_adx(candles, 14)[-1]
+        ema50_4h = TechnicalIndicators.calculate_ema(closes, 50)[-1]
+        ema200_4h = TechnicalIndicators.calculate_ema(closes, 200)[-1]
+        st_list = TechnicalIndicators.calculate_supertrend(candles, period=10, multiplier=3.0)
+        curr_st = st_list[-1]
+        prev_st = st_list[-2] if len(st_list) >= 2 else curr_st
+        
         atr = TechnicalIndicators.calculate_atr(candles, 14)[-1]
-        vol_sma = TechnicalIndicators.calculate_sma(volumes, 20)[-1]
-        vwap = TechnicalIndicators.calculate_vwap(candles)[-1]
         
         current_candle = candles[-1]
         close = current_candle["close"]
-        low = current_candle["low"]
-        high = current_candle["high"]
-        vol = current_candle["volume"]
-        vol_ratio = vol / vol_sma if vol_sma > 0 else 1.0
         
         market_snapshot = {
             "timeframe": self.timeframe_str,
-            "ema800_1h": round(ema800_1h, 4),
-            "ema200": round(ema200, 4),
-            "ema9": round(ema9, 4),
-            "ema21": round(ema21, 4),
-            "ema21_slope": round(ema21_slope, 4),
-            "rsi": round(rsi, 2),
-            "adx": round(adx, 2),
-            "atr": round(atr, 4),
-            "volume_ratio": round(vol_ratio, 2),
-            "vwap": round(vwap, 4)
+            "ema50_4h": round(ema50_4h, 4),
+            "ema200_4h": round(ema200_4h, 4),
+            "supertrend": curr_st["supertrend"],
+            "st_direction": "GREEN" if curr_st["direction"] == 1 else "RED",
+            "atr_4h": round(atr, 4)
         }
         
-        # Multi-Timeframe Alignment Checks
-        is_1h_uptrend = close > ema800_1h
-        is_1h_downtrend = close < ema800_1h
+        # 4H Supertrend Direction Reversal
+        st_turned_green = curr_st["direction"] == 1 and prev_st["direction"] == -1
+        st_turned_red = curr_st["direction"] == -1 and prev_st["direction"] == 1
 
-        # 🟢 LONG Signal Conditions (Must align with 1H Uptrend)
-        is_long_uptrend = is_1h_uptrend and close > ema200 and ema9 > ema21
-        is_long_pullback = low <= ema21 and close > ema9
-        is_long_rsi = 50 <= rsi <= 65
-        is_adx_valid = adx >= 22.0 and abs(ema21_slope) >= 0.03
-        is_vol_valid = vol_ratio >= 1.8
+        # 🟢 LONG 4H Swing Signal Conditions
+        is_long_swing = close > ema200_4h and curr_st["direction"] == 1 and st_turned_green
         
-        # 🔴 SHORT Signal Conditions (Must align with 1H Downtrend)
-        is_short_downtrend = is_1h_downtrend and close < ema200 and ema9 < ema21
-        is_short_rejection = high >= ema21 and close < ema9
-        is_short_rsi = 35 <= rsi <= 50
+        # 🔴 SHORT 4H Swing Signal Conditions
+        is_short_swing = close < ema200_4h and curr_st["direction"] == -1 and st_turned_red
         
-        if is_long_uptrend and is_long_pullback and is_long_rsi and is_adx_valid and is_vol_valid:
-            risk_params = self.risk_engine.calculate_position_sizing(self.paper_engine.current_capital, close, atr, side="LONG", tp_multiplier=2.25)
-            sig_key = f"LONG-{close}"
+        if is_long_swing:
+            risk_params = self.risk_engine.calculate_position_sizing(self.paper_engine.current_capital, close, atr, side="LONG", sl_multiplier=2.0, tp_multiplier=4.0)
+            sig_key = f"4H-LONG-{close}"
             if self.last_signals_sent.get(symbol) != sig_key:
                 self.notifier.send_signal_alert(symbol, close, risk_params)
                 self.last_signals_sent[symbol] = sig_key
@@ -111,12 +95,12 @@ class TraderBot:
                 "atr": atr,
                 "risk_params": risk_params,
                 "market_snapshot": market_snapshot,
-                "reason": f"1H MTF LONG Rebound (1H EMA={ema800_1h:.1f}, ADX={adx:.1f}, Vol={vol_ratio:.1f}x)"
+                "reason": f"4H Swing LONG Entry (Price > EMA200 4H & Supertrend GREEN)"
             }
 
-        elif is_short_downtrend and is_short_rejection and is_short_rsi and is_adx_valid and is_vol_valid:
-            risk_params = self.risk_engine.calculate_position_sizing(self.paper_engine.current_capital, close, atr, side="SHORT", tp_multiplier=2.25)
-            sig_key = f"SHORT-{close}"
+        elif is_short_swing:
+            risk_params = self.risk_engine.calculate_position_sizing(self.paper_engine.current_capital, close, atr, side="SHORT", sl_multiplier=2.0, tp_multiplier=4.0)
+            sig_key = f"4H-SHORT-{close}"
             if self.last_signals_sent.get(symbol) != sig_key:
                 self.notifier.send_signal_alert(symbol, close, risk_params)
                 self.last_signals_sent[symbol] = sig_key
@@ -133,7 +117,7 @@ class TraderBot:
                 "atr": atr,
                 "risk_params": risk_params,
                 "market_snapshot": market_snapshot,
-                "reason": f"1H MTF SHORT Rejection (1H EMA={ema800_1h:.1f}, ADX={adx:.1f}, Vol={vol_ratio:.1f}x)"
+                "reason": f"4H Swing SHORT Entry (Price < EMA200 4H & Supertrend RED)"
             }
             
         return {
@@ -141,11 +125,11 @@ class TraderBot:
             "signal": "NONE",
             "timeframe": self.timeframe_str,
             "market_snapshot": market_snapshot,
-            "reason": f"No signal (Price={close:,.2f}, 1H_EMA={ema800_1h:,.2f}, ADX={adx:.1f}, RSI={rsi:.1f})"
+            "reason": f"No 4H Swing signal (Price={close:,.2f}, EMA200_4H={ema200_4h:,.2f}, Supertrend={'GREEN' if curr_st['direction']==1 else 'RED'})"
         }
 
     def run_single_iteration(self) -> dict:
-        """Run a single loop iteration monitoring all OKX Perpetual pairs."""
+        """Run a single loop iteration monitoring 4H Swing signals across OKX pairs."""
         try:
             if self.notifier.check_for_panic_command():
                 if not self.risk_engine.is_circuit_broken:
@@ -185,7 +169,8 @@ class TraderBot:
         pair_results = {}
         for sym in self.symbols:
             try:
-                candles = self.client.get_candles(symbol=sym, resolution=self.resolution, limit=300)
+                # Fetch 4H candles (resolution = "4H")
+                candles = self.client.get_candles(symbol=sym, resolution="4H", limit=300)
                 if candles:
                     eval_res = self.evaluate_pair_signal(sym, candles)
                     pair_results[sym] = {
@@ -199,7 +184,7 @@ class TraderBot:
         try:
             closed_trades = self.paper_engine.update_positions(pair_results)
             for closed in closed_trades:
-                pnl_msg = f"<b>[{closed['side']}] {closed['type']} HIT!</b>\nAsset: {closed['symbol']}\nTF: {closed.get('timeframe','15m')}\nNet PnL: ${closed['net_pnl']} ({closed['pnl_pct']}%)"
+                pnl_msg = f"<b>[{closed['side']}] {closed['type']} HIT!</b>\nAsset: {closed['symbol']}\nTF: 4H Swing\nNet PnL: ${closed['net_pnl']} ({closed['pnl_pct']}%)"
                 self.notifier.send_message(pnl_msg)
         except Exception as e:
             print(f"[TraderBot] Error updating paper positions: {e}")
@@ -222,10 +207,10 @@ class TraderBot:
                     "estimated_annual_apy_pct": 15.33,
                     "status": "ACTIVE (Delta-Neutral 1x Spot + 1x Short)"
                 },
-                "scalping_engine_20pct": {
-                    "allocated_capital_usd": self.scalping_capital_20,
+                "swing_engine_20pct": {
+                    "allocated_capital_usd": self.swing_capital_20,
                     "current_capital_usd": self.paper_engine.current_capital,
-                    "status": "ACTIVE (1H MTF Filter + R:R 1:1.5)"
+                    "status": "ACTIVE (4H Swing Trading Supertrend 10,3.0 + EMA200)"
                 }
             },
             "active_positions": list(self.paper_engine.active_positions.values()),
