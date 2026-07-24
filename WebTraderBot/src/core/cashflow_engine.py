@@ -20,7 +20,7 @@ class CashFlowEngine:
         self.min_funding_apy = 12.0  # Require > 12% APY net funding yield
         self.account_mode_verified = False
 
-    def enforce_okx_account_mode((self) -> bool:
+    def enforce_okx_account_mode(self) -> bool:
         """Verify and enforce OKX Single-currency Margin Mode for Spot-Futures Arbitrage collateral."""
         try:
             # Simulate/Verify OKX account mode setting via API
