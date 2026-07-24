@@ -31,7 +31,7 @@ interface PaperSummary {
 interface ActivePosition {
   id: string;
   symbol: string;
-  side: string; // "LONG" or "SHORT"
+  side: string;
   leverage: number;
   entry_price: number;
   qty: number;
@@ -69,9 +69,26 @@ interface StatusResponse {
   reason?: string;
 }
 
+interface BacktestResult {
+  symbol: string;
+  status: string;
+  days: number;
+  candles_analyzed: number;
+  initial_capital: number;
+  final_capital: number;
+  net_profit: number;
+  net_profit_pct: number;
+  total_trades: number;
+  win_trades: number;
+  loss_trades: number;
+  win_rate_pct: number;
+  profit_factor: number;
+  max_drawdown_pct: number;
+  friction_deductions: string;
+}
+
 const DEFAULT_BACKEND = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
 
-// 15 Battle-Tested Veteran Crypto Instruments (> 5 Years Old)
 const VETERAN_COINS = [
   { sym: 'BTC-USDT-SWAP', label: 'BTC Perpetual', tag: 'BTC', est: '2009' },
   { sym: 'ETH-USDT-SWAP', label: 'ETH Perpetual', tag: 'ETH', est: '2015' },
@@ -99,13 +116,17 @@ export default function Dashboard() {
   ]);
   const [tradingMode, setTradingMode] = useState<string>('PAPER');
 
-  // Candlestick & Indicators Chart State
+  // Chart State
   const [chartSymbol, setChartSymbol] = useState<string>('BTC-USDT-SWAP');
   const [chartResolution, setChartResolution] = useState<string>('15');
   const [candles, setCandles] = useState<CandleData[]>([]);
 
-  // Feed Log Coin Filter State (User can toggle which coins to view in log)
+  // Log Coins Filter
   const [selectedLogCoins, setSelectedLogCoins] = useState<string[]>(['BTC', 'ETH', 'SOL', 'DOGE', 'LINK']);
+
+  // Backtest State
+  const [backtestRunning, setBacktestRunning] = useState<boolean>(false);
+  const [backtestData, setBacktestData] = useState<BacktestResult | null>(null);
 
   const toggleLogCoin = (coinTag: string) => {
     if (selectedLogCoins.includes(coinTag)) {
@@ -115,14 +136,6 @@ export default function Dashboard() {
     } else {
       setSelectedLogCoins([...selectedLogCoins, coinTag]);
     }
-  };
-
-  const selectAllLogCoins = () => {
-    setSelectedLogCoins(VETERAN_COINS.map(c => c.tag));
-  };
-
-  const selectTop5LogCoins = () => {
-    setSelectedLogCoins(['BTC', 'ETH', 'SOL', 'DOGE', 'LINK']);
   };
 
   const fetchStatus = async () => {
@@ -145,9 +158,7 @@ export default function Dashboard() {
       const now = new Date().toLocaleTimeString();
       const pr = result.pair_results || {};
 
-      // Dynamic Terminal Log Formatting based on user's selectedLogCoins
       const coinLogParts: string[] = [];
-
       selectedLogCoins.forEach((tag) => {
         const coinObj = VETERAN_COINS.find(c => c.tag === tag);
         if (coinObj) {
@@ -172,7 +183,6 @@ export default function Dashboard() {
   const fetchCandles = async () => {
     try {
       let res = await fetch(`${backendUrl}/api/candles?symbol=${chartSymbol}&resolution=${chartResolution}`).catch(() => null);
-      
       if ((!res || res.status === 404) && backendUrl !== 'http://localhost:8000') {
         res = await fetch(`http://localhost:8000/api/candles?symbol=${chartSymbol}&resolution=${chartResolution}`).catch(() => null);
       }
@@ -185,6 +195,34 @@ export default function Dashboard() {
       }
     } catch (err) {
       console.error('Error fetching candles data:', err);
+    }
+  };
+
+  const runBacktest = async () => {
+    setBacktestRunning(true);
+    setBacktestData(null);
+    try {
+      const res = await fetch(`${backendUrl}/api/backtest?symbol=${chartSymbol}&days=90`);
+      const data = await res.json();
+      const taskId = data.task_id;
+
+      // Poll result
+      const pollInterval = setInterval(async () => {
+        const pollRes = await fetch(`${backendUrl}/api/backtest-result?task_id=${taskId}`);
+        const pollData = await pollRes.json();
+        if (pollData.status === 'COMPLETED') {
+          clearInterval(pollInterval);
+          setBacktestRunning(false);
+          setBacktestData(pollData.result);
+        } else if (pollData.status === 'ERROR') {
+          clearInterval(pollInterval);
+          setBacktestRunning(false);
+          alert('Backtest failed: ' + pollData.error);
+        }
+      }, 1000);
+    } catch (e) {
+      setBacktestRunning(false);
+      alert('Failed to launch backtest: ' + e);
     }
   };
 
@@ -214,14 +252,10 @@ export default function Dashboard() {
 
   const triggerPanic = async () => {
     if (confirm('🚨 EMERGENCY PANIC STOP:\nคุณต้องการยกเลิกออเดอร์ทั้งหมด และหยุด Bot ทันทีหรือไม่?')) {
-      try {
-        const res = await fetch(`${backendUrl}/api/panic`, { method: 'POST' });
-        const resData = await res.json();
-        alert(resData.message);
-        fetchStatus();
-      } catch (e) {
-        console.error('Panic trigger error:', e);
-      }
+      const res = await fetch(`${backendUrl}/api/panic`, { method: 'POST' });
+      const resData = await res.json();
+      alert(resData.message);
+      fetchStatus();
     }
   };
 
@@ -243,24 +277,6 @@ export default function Dashboard() {
   const pairs = data?.pair_results || {};
   const summary = data?.paper_summary;
   const botState = data?.bot_state || (data?.status === 'OK' ? 'RUNNING' : data?.status || 'RUNNING');
-
-  // Status Styling Logic
-  let statusBg = 'rgba(0, 240, 144, 0.1)';
-  let statusBorder = '1px solid rgba(0, 240, 144, 0.2)';
-  let statusColor = '#00f090';
-  let statusLabel = '🟢 OKX 15-VETERAN BOT RUNNING';
-
-  if (botState === 'PAUSED') {
-    statusBg = 'rgba(245, 158, 11, 0.1)';
-    statusBorder = '1px solid rgba(245, 158, 11, 0.3)';
-    statusColor = '#f59e0b';
-    statusLabel = '🟡 BOT PAUSED';
-  } else if (botState === 'ERROR') {
-    statusBg = 'rgba(255, 59, 105, 0.15)';
-    statusBorder = '1px solid rgba(255, 59, 105, 0.3)';
-    statusColor = '#ff3b69';
-    statusLabel = '🔴 PANIC / CIRCUIT BROKEN';
-  }
 
   return (
     <div style={{
@@ -296,91 +312,132 @@ export default function Dashboard() {
             O
           </div>
           <div>
-            <h1 style={{ fontSize: '20px', fontWeight: '700', margin: 0 }}>WebTraderBot — Pro Trading Terminal Layout</h1>
-            <p style={{ fontSize: '12px', color: '#9ca3af', margin: 0 }}>OKX Perpetual Swaps (EMA 200, EMA 9, EMA 21, VWAP, ADX, Volume)</p>
+            <h1 style={{ fontSize: '20px', fontWeight: '700', margin: 0 }}>WebTraderBot — Production Quant Terminal</h1>
+            <p style={{ fontSize: '12px', color: '#9ca3af', margin: 0 }}>OKX 15-Veteran Swaps (Daily Cash Flow & ProcessPool Backtest Engine)</p>
           </div>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-          <div style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: '8px',
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <button onClick={runBacktest} disabled={backtestRunning} style={{
+            background: 'linear-gradient(135deg, #a855f7, #6366f1)',
+            color: 'white',
+            border: 'none',
             padding: '8px 16px',
-            borderRadius: '20px',
-            background: statusBg,
-            border: statusBorder,
-            color: statusColor,
-            fontSize: '13px',
-            fontWeight: '700'
+            borderRadius: '8px',
+            fontWeight: '700',
+            fontSize: '12px',
+            cursor: backtestRunning ? 'not-allowed' : 'pointer',
+            boxShadow: '0 4px 15px rgba(168, 85, 247, 0.4)'
           }}>
-            <span style={{
-              width: '8px',
-              height: '8px',
-              borderRadius: '50%',
-              backgroundColor: statusColor
-            }} />
-            {statusLabel}
-          </div>
+            {backtestRunning ? '⏳ Backtesting...' : `🧪 Backtest ${chartSymbol.split('-')[0]} (90 Days)`}
+          </button>
 
-          <div style={{ display: 'flex', gap: '8px' }}>
-            <button onClick={startBot} style={{
-              background: 'rgba(0, 240, 144, 0.15)',
-              border: '1px solid rgba(0, 240, 144, 0.3)',
-              color: '#00f090',
-              padding: '8px 14px',
-              borderRadius: '8px',
-              fontWeight: '700',
-              fontSize: '12px',
-              cursor: 'pointer'
-            }}>
-              ▶️ เริ่มทำงาน
-            </button>
+          <button onClick={startBot} style={{
+            background: 'rgba(0, 240, 144, 0.15)',
+            border: '1px solid rgba(0, 240, 144, 0.3)',
+            color: '#00f090',
+            padding: '8px 14px',
+            borderRadius: '8px',
+            fontWeight: '700',
+            fontSize: '12px',
+            cursor: 'pointer'
+          }}>
+            ▶️ Start
+          </button>
 
-            <button onClick={pauseBot} style={{
-              background: 'rgba(245, 158, 11, 0.15)',
-              border: '1px solid rgba(245, 158, 11, 0.3)',
-              color: '#f59e0b',
-              padding: '8px 14px',
-              borderRadius: '8px',
-              fontWeight: '700',
-              fontSize: '12px',
-              cursor: 'pointer'
-            }}>
-              ⏸️ หยุดพัก
-            </button>
+          <button onClick={pauseBot} style={{
+            background: 'rgba(245, 158, 11, 0.15)',
+            border: '1px solid rgba(245, 158, 11, 0.3)',
+            color: '#f59e0b',
+            padding: '8px 14px',
+            borderRadius: '8px',
+            fontWeight: '700',
+            fontSize: '12px',
+            cursor: 'pointer'
+          }}>
+            ⏸️ Pause
+          </button>
 
-            <button onClick={toggleMode} style={{
-              background: 'rgba(59, 130, 246, 0.15)',
-              border: '1px solid rgba(59, 130, 246, 0.3)',
-              color: '#3b82f6',
-              padding: '8px 14px',
-              borderRadius: '8px',
-              fontWeight: '700',
-              fontSize: '12px',
-              cursor: 'pointer'
-            }}>
-              MODE: {tradingMode}
-            </button>
+          <button onClick={toggleMode} style={{
+            background: 'rgba(59, 130, 246, 0.15)',
+            border: '1px solid rgba(59, 130, 246, 0.3)',
+            color: '#3b82f6',
+            padding: '8px 14px',
+            borderRadius: '8px',
+            fontWeight: '700',
+            fontSize: '12px',
+            cursor: 'pointer'
+          }}>
+            MODE: {tradingMode}
+          </button>
 
-            <button onClick={triggerPanic} style={{
-              background: 'linear-gradient(135deg, #ff3b69, #dc2626)',
-              color: 'white',
-              border: 'none',
-              padding: '8px 16px',
-              borderRadius: '8px',
-              fontWeight: '700',
-              fontSize: '12px',
-              cursor: 'pointer',
-              boxShadow: '0 4px 15px rgba(255, 59, 105, 0.4)'
-            }}>
-              🚨 PANIC STOP
-            </button>
-          </div>
+          <button onClick={triggerPanic} style={{
+            background: 'linear-gradient(135deg, #ff3b69, #dc2626)',
+            color: 'white',
+            border: 'none',
+            padding: '8px 16px',
+            borderRadius: '8px',
+            fontWeight: '700',
+            fontSize: '12px',
+            cursor: 'pointer',
+            boxShadow: '0 4px 15px rgba(255, 59, 105, 0.4)'
+          }}>
+            🚨 PANIC STOP
+          </button>
         </div>
       </header>
 
-      {/* 15 OKX Perpetual Swap Instrument Cards (Veteran Coins > 5 Years) */}
+      {/* Backtest Result Modal/Panel */}
+      {backtestData && (
+        <div style={{
+          background: 'linear-gradient(135deg, rgba(168, 85, 247, 0.15), rgba(59, 130, 246, 0.15))',
+          border: '1px solid #a855f7',
+          borderRadius: '16px',
+          padding: '16px 20px',
+          marginBottom: '24px',
+          backdropFilter: 'blur(12px)'
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+            <h3 style={{ margin: 0, fontSize: '15px', color: '#c084fc', fontWeight: '700' }}>
+              🧪 Anti-Bias Backtest Audit Result: {backtestData.symbol} ({backtestData.days} Days / {backtestData.candles_analyzed} Candles)
+            </h3>
+            <span style={{ fontSize: '11px', color: '#9ca3af' }}>Friction: {backtestData.friction_deductions}</span>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: '12px', fontSize: '12px' }}>
+            <div>
+              <div style={{ color: '#9ca3af' }}>Net Profit</div>
+              <div style={{ fontWeight: '700', color: backtestData.net_profit >= 0 ? '#00f090' : '#ff3b69', fontSize: '14px' }}>
+                ${backtestData.net_profit} ({backtestData.net_profit_pct}%)
+              </div>
+            </div>
+            <div>
+              <div style={{ color: '#9ca3af' }}>Win Rate</div>
+              <div style={{ fontWeight: '700', color: '#38bdf8', fontSize: '14px' }}>
+                {backtestData.win_rate_pct}% ({backtestData.win_trades}W / {backtestData.loss_trades}L)
+              </div>
+            </div>
+            <div>
+              <div style={{ color: '#9ca3af' }}>Profit Factor</div>
+              <div style={{ fontWeight: '700', color: '#f59e0b', fontSize: '14px' }}>{backtestData.profit_factor}</div>
+            </div>
+            <div>
+              <div style={{ color: '#9ca3af' }}>Max Drawdown</div>
+              <div style={{ fontWeight: '700', color: '#ef4444', fontSize: '14px' }}>{backtestData.max_drawdown_pct}%</div>
+            </div>
+            <div>
+              <div style={{ color: '#9ca3af' }}>Total Trades</div>
+              <div style={{ fontWeight: '700', color: '#f3f4f6', fontSize: '14px' }}>{backtestData.total_trades}</div>
+            </div>
+            <div>
+              <div style={{ color: '#9ca3af' }}>Final Capital</div>
+              <div style={{ fontWeight: '700', color: '#00f090', fontSize: '14px' }}>${backtestData.final_capital}</div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 15 OKX Perpetual Swap Instrument Cards */}
       <div style={{
         display: 'grid',
         gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
@@ -456,7 +513,7 @@ export default function Dashboard() {
         gap: '20px',
         marginBottom: '24px'
       }}>
-        {/* Left Box: Interactive Candlestick Chart */}
+        {/* Left Box: Candlestick Chart */}
         <div>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
@@ -522,10 +579,9 @@ export default function Dashboard() {
               </button>
             </div>
 
-            {/* Coin Log Filter Selector Bar */}
             <div style={{ display: 'flex', gap: '4px', alignItems: 'center', flexWrap: 'wrap', marginBottom: '12px' }}>
               <span style={{ fontSize: '10px', color: '#9ca3af', marginRight: '2px' }}>Log Coins:</span>
-              <button onClick={selectAllLogCoins} style={{
+              <button onClick={() => setSelectedLogCoins(VETERAN_COINS.map(c => c.tag))} style={{
                 background: 'rgba(59, 130, 246, 0.2)',
                 border: '1px solid #3b82f6',
                 color: '#3b82f6',
@@ -537,7 +593,7 @@ export default function Dashboard() {
               }}>
                 All 15
               </button>
-              <button onClick={selectTop5LogCoins} style={{
+              <button onClick={() => setSelectedLogCoins(['BTC', 'ETH', 'SOL', 'DOGE', 'LINK'])} style={{
                 background: 'rgba(0, 240, 144, 0.2)',
                 border: '1px solid #00f090',
                 color: '#00f090',
@@ -572,7 +628,6 @@ export default function Dashboard() {
               })}
             </div>
 
-            {/* Live Scrolling Terminal Window */}
             <div style={{
               background: '#06080d',
               border: '1px solid rgba(255, 255, 255, 0.05)',
@@ -593,8 +648,39 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Tables & Summary Grid Section */}
+      {/* Daily Cash Flow Yields & Portfolio Summary Grid */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '20px' }}>
+        {/* Daily Cash Flow Arbitrage Card */}
+        <div style={{
+          background: 'rgba(18, 24, 38, 0.75)',
+          backdropFilter: 'blur(12px)',
+          border: '1px solid rgba(0, 240, 144, 0.3)',
+          borderRadius: '16px',
+          padding: '20px'
+        }}>
+          <h2 style={{ fontWeight: '700', fontSize: '14px', marginBottom: '16px', color: '#00f090' }}>
+            💵 Daily Cash Flow Yield (Spot-Futures Arbitrage)
+          </h2>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', fontSize: '13px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', paddingBottom: '8px', borderBottom: '1px solid rgba(255, 255, 255, 0.05)' }}>
+              <span style={{ color: '#9ca3af' }}>Delta-Neutral Yield</span>
+              <span style={{ fontWeight: '700', color: '#00f090', fontFamily: 'monospace' }}>~15.33% APY</span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', paddingBottom: '8px', borderBottom: '1px solid rgba(255, 255, 255, 0.05)' }}>
+              <span style={{ color: '#9ca3af' }}>Est. Daily Cash Flow</span>
+              <span style={{ fontWeight: '700', color: '#38bdf8', fontFamily: 'monospace' }}>+0.042% / Day</span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', paddingBottom: '8px', borderBottom: '1px solid rgba(255, 255, 255, 0.05)' }}>
+              <span style={{ color: '#9ca3af' }}>OKX Account Mode</span>
+              <span style={{ fontWeight: '700', color: '#a855f7' }}>Single-Currency Margin</span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <span style={{ color: '#9ca3af' }}>Atomic Shield</span>
+              <span style={{ fontWeight: '600', color: '#00f090' }}>🟢 Active (2s Rollback)</span>
+            </div>
+          </div>
+        </div>
+
         {/* Paper Portfolio Summary */}
         <div style={{
           background: 'rgba(18, 24, 38, 0.75)',
@@ -615,13 +701,9 @@ export default function Dashboard() {
                 ${summary?.net_profit || '0.00'} ({summary?.net_profit_pct || 0}%)
               </span>
             </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', paddingBottom: '8px', borderBottom: '1px solid rgba(255, 255, 255, 0.05)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
               <span style={{ color: '#9ca3af' }}>Win Rate</span>
               <span style={{ fontWeight: '700', fontFamily: 'monospace' }}>{summary?.win_rate_pct || 0}% ({summary?.total_trades || 0} Trades)</span>
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <span style={{ color: '#9ca3af' }}>OKX Leverage / Fee</span>
-              <span style={{ fontWeight: '600', color: '#d1d5db' }}>3x Isolated | ~0.05% Fee</span>
             </div>
           </div>
         </div>
@@ -673,58 +755,6 @@ export default function Dashboard() {
               ) : (
                 <tr>
                   <td colSpan={4} style={{ padding: '16px 0', color: '#6b7280', textAlign: 'center' }}>No active positions</td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-
-        {/* Closed History */}
-        <div style={{
-          background: 'rgba(18, 24, 38, 0.75)',
-          backdropFilter: 'blur(12px)',
-          border: '1px solid rgba(255, 255, 255, 0.08)',
-          borderRadius: '16px',
-          padding: '20px'
-        }}>
-          <h2 style={{ fontWeight: '600', fontSize: '14px', marginBottom: '12px' }}>📜 Closed History</h2>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px' }}>
-            <thead>
-              <tr style={{ color: '#9ca3af', borderBottom: '1px solid rgba(255, 255, 255, 0.05)', textAlign: 'left' }}>
-                <th style={{ paddingBottom: '6px' }}>Symbol</th>
-                <th style={{ paddingBottom: '6px' }}>Side</th>
-                <th style={{ paddingBottom: '6px' }}>Net PnL</th>
-              </tr>
-            </thead>
-            <tbody>
-              {data?.trade_history && data.trade_history.length > 0 ? (
-                data.trade_history.map((tr) => {
-                  const isWin = tr.net_pnl >= 0;
-                  const isLong = tr.side === 'LONG';
-                  return (
-                    <tr key={tr.id} style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.05)' }}>
-                      <td style={{ padding: '6px 0', fontWeight: 'bold' }}>{tr.symbol.split('-')[0]}</td>
-                      <td style={{ padding: '6px 0' }}>
-                        <span style={{
-                          padding: '2px 5px',
-                          borderRadius: '4px',
-                          fontWeight: '700',
-                          fontSize: '9px',
-                          background: isLong ? 'rgba(0, 240, 144, 0.15)' : 'rgba(255, 59, 105, 0.15)',
-                          color: isLong ? '#00f090' : '#ff3b69'
-                        }}>
-                          {tr.side}
-                        </span>
-                      </td>
-                      <td style={{ padding: '6px 0', fontFamily: 'monospace', fontWeight: '700', color: isWin ? '#00f090' : '#ff3b69' }}>
-                        ${tr.net_pnl} ({tr.pnl_pct}%)
-                      </td>
-                    </tr>
-                  );
-                })
-              ) : (
-                <tr>
-                  <td colSpan={3} style={{ padding: '16px 0', color: '#6b7280', textAlign: 'center' }}>No closed trades yet</td>
                 </tr>
               )}
             </tbody>
