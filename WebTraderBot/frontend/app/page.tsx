@@ -9,6 +9,14 @@ interface PairEval {
   side?: string;
   price?: number;
   reason?: string;
+  market_snapshot?: {
+    ema800_1h?: number;
+    ema200?: number;
+    ema9?: number;
+    ema21?: number;
+    rsi?: number;
+    adx?: number;
+  };
 }
 
 interface PairResult {
@@ -64,6 +72,18 @@ interface StatusResponse {
   last_price?: number;
   pair_results?: Record<string, PairResult>;
   paper_summary?: PaperSummary;
+  institutional_allocation?: {
+    funding_rate_arbitrage_80pct?: {
+      allocated_capital_usd: number;
+      estimated_annual_apy_pct: number;
+      status: string;
+    };
+    scalping_engine_20pct?: {
+      allocated_capital_usd: number;
+      current_capital_usd: number;
+      status: string;
+    };
+  };
   active_positions?: ActivePosition[];
   trade_history?: TradeRecord[];
   reason?: string;
@@ -72,18 +92,38 @@ interface StatusResponse {
 interface BacktestResult {
   symbol: string;
   status: string;
-  days: number;
+  days_simulated: number;
   candles_analyzed: number;
-  initial_capital: number;
-  final_capital: number;
-  net_profit: number;
-  net_profit_pct: number;
-  total_trades: number;
-  win_trades: number;
-  loss_trades: number;
-  win_rate_pct: number;
-  profit_factor: number;
-  max_drawdown_pct: number;
+  initial_capital_usd: number;
+  initial_capital_thb: number;
+  architecture: string;
+  allocation_breakdown: {
+    funding_arbitrage_80pct: {
+      allocated_capital_usd: number;
+      final_capital_usd: number;
+      accumulated_cashflow_usd: number;
+      accumulated_cashflow_thb: number;
+      annual_apy_pct: number;
+    };
+    scalping_engine_20pct: {
+      allocated_capital_usd: number;
+      final_capital_usd: number;
+      net_profit_usd: number;
+      net_profit_pct: number;
+      profit_factor: number;
+      total_trades: number;
+      win_rate_pct: number;
+      max_drawdown_pct: number;
+    };
+  };
+  combined_portfolio_results: {
+    final_capital_usd: number;
+    final_capital_thb: number;
+    net_profit_usd: number;
+    net_profit_thb: number;
+    net_profit_pct: number;
+    verdict: string;
+  };
   friction_deductions: string;
 }
 
@@ -111,7 +151,7 @@ export default function Dashboard() {
   const [backendUrl, setBackendUrl] = useState<string>(DEFAULT_BACKEND);
   const [data, setData] = useState<StatusResponse | null>(null);
   const [logs, setLogs] = useState<string[]>([
-    'Initializing Next.js OKX 15-Veteran Futures Portfolio...',
+    'Initializing Next.js OKX 15-Veteran Institutional Portfolio...',
     `Target Backend: ${DEFAULT_BACKEND}`
   ]);
   const [tradingMode, setTradingMode] = useState<string>('PAPER');
@@ -202,11 +242,10 @@ export default function Dashboard() {
     setBacktestRunning(true);
     setBacktestData(null);
     try {
-      const res = await fetch(`${backendUrl}/api/backtest?symbol=${chartSymbol}&days=90`);
+      const res = await fetch(`${backendUrl}/api/backtest?symbol=${chartSymbol}&days=180`);
       const data = await res.json();
       const taskId = data.task_id;
 
-      // Poll result
       const pollInterval = setInterval(async () => {
         const pollRes = await fetch(`${backendUrl}/api/backtest-result?task_id=${taskId}`);
         const pollData = await pollRes.json();
@@ -276,7 +315,7 @@ export default function Dashboard() {
 
   const pairs = data?.pair_results || {};
   const summary = data?.paper_summary;
-  const botState = data?.bot_state || (data?.status === 'OK' ? 'RUNNING' : data?.status || 'RUNNING');
+  const alloc = data?.institutional_allocation;
 
   return (
     <div style={{
@@ -312,8 +351,8 @@ export default function Dashboard() {
             O
           </div>
           <div>
-            <h1 style={{ fontSize: '20px', fontWeight: '700', margin: 0 }}>WebTraderBot — Production Quant Terminal</h1>
-            <p style={{ fontSize: '12px', color: '#9ca3af', margin: 0 }}>OKX 15-Veteran Swaps (Daily Cash Flow & ProcessPool Backtest Engine)</p>
+            <h1 style={{ fontSize: '20px', fontWeight: '700', margin: 0 }}>WebTraderBot — Institutional 80/20 Portfolio Terminal</h1>
+            <p style={{ fontSize: '12px', color: '#9ca3af', margin: 0 }}>OKX Swaps (80% Delta-Neutral Arbitrage + 20% 1H MTF Scalper R:R 1:1.5)</p>
           </div>
         </div>
 
@@ -329,7 +368,7 @@ export default function Dashboard() {
             cursor: backtestRunning ? 'not-allowed' : 'pointer',
             boxShadow: '0 4px 15px rgba(168, 85, 247, 0.4)'
           }}>
-            {backtestRunning ? '⏳ Backtesting...' : `🧪 Backtest ${chartSymbol.split('-')[0]} (90 Days)`}
+            {backtestRunning ? '⏳ Backtesting...' : `🧪 Backtest ${chartSymbol.split('-')[0]} (6 Months)`}
           </button>
 
           <button onClick={startBot} style={{
@@ -390,48 +429,60 @@ export default function Dashboard() {
       {/* Backtest Result Modal/Panel */}
       {backtestData && (
         <div style={{
-          background: 'linear-gradient(135deg, rgba(168, 85, 247, 0.15), rgba(59, 130, 246, 0.15))',
-          border: '1px solid #a855f7',
+          background: 'linear-gradient(135deg, rgba(0, 240, 144, 0.15), rgba(59, 130, 246, 0.15))',
+          border: '1px solid #00f090',
           borderRadius: '16px',
-          padding: '16px 20px',
+          padding: '18px 22px',
           marginBottom: '24px',
           backdropFilter: 'blur(12px)'
         }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-            <h3 style={{ margin: 0, fontSize: '15px', color: '#c084fc', fontWeight: '700' }}>
-              🧪 Anti-Bias Backtest Audit Result: {backtestData.symbol} ({backtestData.days} Days / {backtestData.candles_analyzed} Candles)
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+            <h3 style={{ margin: 0, fontSize: '15px', color: '#00f090', fontWeight: '700' }}>
+              🧪 Institutional 80/20 Backtest Result: {backtestData.symbol} ({backtestData.days_simulated} Days / {backtestData.candles_analyzed} Candles)
             </h3>
-            <span style={{ fontSize: '11px', color: '#9ca3af' }}>Friction: {backtestData.friction_deductions}</span>
+            <span style={{ fontSize: '11px', color: '#38bdf8', fontWeight: '700' }}>{backtestData.combined_portfolio_results.verdict}</span>
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: '12px', fontSize: '12px' }}>
             <div>
-              <div style={{ color: '#9ca3af' }}>Net Profit</div>
-              <div style={{ fontWeight: '700', color: backtestData.net_profit >= 0 ? '#00f090' : '#ff3b69', fontSize: '14px' }}>
-                ${backtestData.net_profit} ({backtestData.net_profit_pct}%)
+              <div style={{ color: '#9ca3af' }}>Combined Net Profit</div>
+              <div style={{ fontWeight: '700', color: backtestData.combined_portfolio_results.net_profit_usd >= 0 ? '#00f090' : '#ff3b69', fontSize: '15px' }}>
+                +${backtestData.combined_portfolio_results.net_profit_usd} (+{backtestData.combined_portfolio_results.net_profit_pct}%)
               </div>
+              <div style={{ fontSize: '10px', color: '#9ca3af' }}>+{backtestData.combined_portfolio_results.net_profit_thb} THB</div>
             </div>
             <div>
-              <div style={{ color: '#9ca3af' }}>Win Rate</div>
+              <div style={{ color: '#9ca3af' }}>80% Funding Arbitrage</div>
               <div style={{ fontWeight: '700', color: '#38bdf8', fontSize: '14px' }}>
-                {backtestData.win_rate_pct}% ({backtestData.win_trades}W / {backtestData.loss_trades}L)
+                +${backtestData.allocation_breakdown.funding_arbitrage_80pct.accumulated_cashflow_usd} USD
               </div>
+              <div style={{ fontSize: '10px', color: '#9ca3af' }}>+{backtestData.allocation_breakdown.funding_arbitrage_80pct.accumulated_cashflow_thb} THB</div>
             </div>
             <div>
-              <div style={{ color: '#9ca3af' }}>Profit Factor</div>
-              <div style={{ fontWeight: '700', color: '#f59e0b', fontSize: '14px' }}>{backtestData.profit_factor}</div>
+              <div style={{ color: '#9ca3af' }}>20% Scalping Net PnL</div>
+              <div style={{ fontWeight: '700', color: backtestData.allocation_breakdown.scalping_engine_20pct.net_profit_usd >= 0 ? '#00f090' : '#ff3b69', fontSize: '14px' }}>
+                ${backtestData.allocation_breakdown.scalping_engine_20pct.net_profit_usd} USD
+              </div>
+              <div style={{ fontSize: '10px', color: '#9ca3af' }}>{backtestData.allocation_breakdown.scalping_engine_20pct.total_trades} Trades</div>
+            </div>
+            <div>
+              <div style={{ color: '#9ca3af' }}>Scalp Win Rate</div>
+              <div style={{ fontWeight: '700', color: '#f59e0b', fontSize: '14px' }}>
+                {backtestData.allocation_breakdown.scalping_engine_20pct.win_rate_pct}%
+              </div>
             </div>
             <div>
               <div style={{ color: '#9ca3af' }}>Max Drawdown</div>
-              <div style={{ fontWeight: '700', color: '#ef4444', fontSize: '14px' }}>{backtestData.max_drawdown_pct}%</div>
+              <div style={{ fontWeight: '700', color: '#ef4444', fontSize: '14px' }}>
+                {backtestData.allocation_breakdown.scalping_engine_20pct.max_drawdown_pct}%
+              </div>
             </div>
             <div>
-              <div style={{ color: '#9ca3af' }}>Total Trades</div>
-              <div style={{ fontWeight: '700', color: '#f3f4f6', fontSize: '14px' }}>{backtestData.total_trades}</div>
-            </div>
-            <div>
-              <div style={{ color: '#9ca3af' }}>Final Capital</div>
-              <div style={{ fontWeight: '700', color: '#00f090', fontSize: '14px' }}>${backtestData.final_capital}</div>
+              <div style={{ color: '#9ca3af' }}>Final Portfolio</div>
+              <div style={{ fontWeight: '700', color: '#00f090', fontSize: '15px' }}>
+                ${backtestData.combined_portfolio_results.final_capital_usd} USD
+              </div>
+              <div style={{ fontSize: '10px', color: '#9ca3af' }}>{backtestData.combined_portfolio_results.final_capital_thb} THB</div>
             </div>
           </div>
         </div>
@@ -648,9 +699,9 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Daily Cash Flow Yields & Portfolio Summary Grid */}
+      {/* Institutional 80/20 Allocation & Portfolio Summary Grid */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '20px' }}>
-        {/* Daily Cash Flow Arbitrage Card */}
+        {/* 80% Weight Funding Rate Arbitrage Engine */}
         <div style={{
           background: 'rgba(18, 24, 38, 0.75)',
           backdropFilter: 'blur(12px)',
@@ -659,56 +710,60 @@ export default function Dashboard() {
           padding: '20px'
         }}>
           <h2 style={{ fontWeight: '700', fontSize: '14px', marginBottom: '16px', color: '#00f090' }}>
-            💵 Daily Cash Flow Yield (Spot-Futures Arbitrage)
+            🏛️ 80% Funding Arbitrage Engine
           </h2>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', fontSize: '13px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', paddingBottom: '8px', borderBottom: '1px solid rgba(255, 255, 255, 0.05)' }}>
-              <span style={{ color: '#9ca3af' }}>Delta-Neutral Yield</span>
-              <span style={{ fontWeight: '700', color: '#00f090', fontFamily: 'monospace' }}>~15.33% APY</span>
+              <span style={{ color: '#9ca3af' }}>Allocated Capital (80%)</span>
+              <span style={{ fontWeight: '700', color: '#00f090', fontFamily: 'monospace' }}>$8,000.00 USD</span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', paddingBottom: '8px', borderBottom: '1px solid rgba(255, 255, 255, 0.05)' }}>
+              <span style={{ color: '#9ca3af' }}>Annual Funding APY</span>
+              <span style={{ fontWeight: '700', color: '#38bdf8', fontFamily: 'monospace' }}>~15.33% APY</span>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', paddingBottom: '8px', borderBottom: '1px solid rgba(255, 255, 255, 0.05)' }}>
               <span style={{ color: '#9ca3af' }}>Est. Daily Cash Flow</span>
-              <span style={{ fontWeight: '700', color: '#38bdf8', fontFamily: 'monospace' }}>+0.042% / Day</span>
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', paddingBottom: '8px', borderBottom: '1px solid rgba(255, 255, 255, 0.05)' }}>
-              <span style={{ color: '#9ca3af' }}>OKX Account Mode</span>
-              <span style={{ fontWeight: '700', color: '#a855f7' }}>Single-Currency Margin</span>
+              <span style={{ fontWeight: '700', color: '#a855f7' }}>+$3.36 USD / Day</span>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <span style={{ color: '#9ca3af' }}>Atomic Shield</span>
-              <span style={{ fontWeight: '600', color: '#00f090' }}>🟢 Active (2s Rollback)</span>
+              <span style={{ color: '#9ca3af' }}>Delta-Neutral Shield</span>
+              <span style={{ fontWeight: '600', color: '#00f090' }}>🟢 ACTIVE (1x Spot + 1x Short)</span>
             </div>
           </div>
         </div>
 
-        {/* Paper Portfolio Summary */}
+        {/* 20% Weight 15m Scalping Engine */}
         <div style={{
           background: 'rgba(18, 24, 38, 0.75)',
           backdropFilter: 'blur(12px)',
-          border: '1px solid rgba(255, 255, 255, 0.08)',
+          border: '1px solid rgba(59, 130, 246, 0.3)',
           borderRadius: '16px',
           padding: '20px'
         }}>
-          <h2 style={{ fontWeight: '600', fontSize: '14px', marginBottom: '16px' }}>💼 Portfolio Summary</h2>
+          <h2 style={{ fontWeight: '700', fontSize: '14px', marginBottom: '16px', color: '#3b82f6' }}>
+            🎯 20% Scalping Engine (1H MTF)
+          </h2>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', fontSize: '13px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', paddingBottom: '8px', borderBottom: '1px solid rgba(255, 255, 255, 0.05)' }}>
-              <span style={{ color: '#9ca3af' }}>Current Balance</span>
-              <span style={{ fontWeight: '700', fontFamily: 'monospace' }}>${summary?.current_capital?.toLocaleString() || '10,000.00'}</span>
+              <span style={{ color: '#9ca3af' }}>Allocated Capital (20%)</span>
+              <span style={{ fontWeight: '700', color: '#3b82f6', fontFamily: 'monospace' }}>$2,000.00 USD</span>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', paddingBottom: '8px', borderBottom: '1px solid rgba(255, 255, 255, 0.05)' }}>
-              <span style={{ color: '#9ca3af' }}>Net Profit</span>
-              <span style={{ fontWeight: '700', fontFamily: 'monospace', color: (summary?.net_profit || 0) >= 0 ? '#00f090' : '#ff3b69' }}>
-                ${summary?.net_profit || '0.00'} ({summary?.net_profit_pct || 0}%)
-              </span>
+              <span style={{ color: '#9ca3af' }}>Macro Filter</span>
+              <span style={{ fontWeight: '700', color: '#00f090' }}>1H Trend Alignment (EMA800)</span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', paddingBottom: '8px', borderBottom: '1px solid rgba(255, 255, 255, 0.05)' }}>
+              <span style={{ color: '#9ca3af' }}>Risk-to-Reward Ratio</span>
+              <span style={{ fontWeight: '700', color: '#f59e0b' }}>R:R = 1 : 1.5 (TP 2.25x ATR)</span>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <span style={{ color: '#9ca3af' }}>Win Rate</span>
-              <span style={{ fontWeight: '700', fontFamily: 'monospace' }}>{summary?.win_rate_pct || 0}% ({summary?.total_trades || 0} Trades)</span>
+              <span style={{ color: '#9ca3af' }}>Max Drawdown Guard</span>
+              <span style={{ fontWeight: '600', color: '#00f090' }}>🟢 Restricted to 20% Pool</span>
             </div>
           </div>
         </div>
 
-        {/* Active Positions */}
+        {/* Active Positions Table */}
         <div style={{
           background: 'rgba(18, 24, 38, 0.75)',
           backdropFilter: 'blur(12px)',
