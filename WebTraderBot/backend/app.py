@@ -188,9 +188,9 @@ def get_cashflow_summary():
             "active_pairs": ["BTC-USDT-SWAP", "ETH-USDT-SWAP", "SOL-USDT-SWAP"]
         },
         "sideway_range_scalper": {
-            "strategy": "Dynamic Sideway Range Scalper B",
-            "status": "GUARDED (ADX < 20 & Volume < 1.5x VMA20)",
-            "risk_guard": "1.5x ATR SL Buffer & 15% Portfolio Cap"
+            "strategy": "4H Swing Trading Engine (Supertrend + ADX > 18)",
+            "status": "ACTIVE (Supertrend 10,3.0 + ADX > 18)",
+            "risk_guard": "2.0x ATR SL Buffer & 8h Cooldown Lockout"
         }
     }
 
@@ -231,7 +231,7 @@ def toggle_mode():
 @app.post("/api/sim-buy")
 def sim_buy(symbol: str = Query("BTC-USDT-SWAP"), side: str = Query("LONG")):
     side = side.upper()
-    candles = bot.client.get_candles(symbol=symbol, resolution="15", limit=300)
+    candles = bot.client.get_candles(symbol=symbol, resolution="240", limit=300)
     if candles:
         price = candles[-1]["close"]
         atr = 0.02 * price

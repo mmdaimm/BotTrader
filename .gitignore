@@ -1,0 +1,13 @@
+# WebTraderBot GitIgnore
+__pycache__/
+*.pyc
+.env
+data/backtest_cache/
+node_modules/
+.next/
+dist/
+
+# Unrelated projects in root
+DormAdmin/
+LineOAChatBot/
+manga-translation-platform/
