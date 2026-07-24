@@ -10,10 +10,10 @@ interface PairEval {
   price?: number;
   reason?: string;
   market_snapshot?: {
-    ema800_1h?: number;
-    ema200?: number;
-    ema9?: number;
-    ema21?: number;
+    ema50_4h?: number;
+    ema200_4h?: number;
+    supertrend?: number;
+    st_direction?: string;
     rsi?: number;
     adx?: number;
   };
@@ -46,7 +46,8 @@ interface ActivePosition {
   order_value: number;
   margin_required: number;
   sl_price: number;
-  tp_price: number;
+  tp1_target?: number;
+  tp1_done?: boolean;
   entry_time: string;
   status: string;
 }
@@ -78,7 +79,7 @@ interface StatusResponse {
       estimated_annual_apy_pct: number;
       status: string;
     };
-    scalping_engine_20pct?: {
+    swing_engine_20pct?: {
       allocated_capital_usd: number;
       current_capital_usd: number;
       status: string;
@@ -150,6 +151,7 @@ const VETERAN_COINS = [
 export default function Dashboard() {
   const [backendUrl, setBackendUrl] = useState<string>(DEFAULT_BACKEND);
   const [data, setData] = useState<StatusResponse | null>(null);
+  const [botState, setBotState] = useState<string>('RUNNING');
   const [logs, setLogs] = useState<string[]>([
     'Initializing Next.js OKX 15-Veteran Institutional Portfolio...',
     `Target Backend: ${DEFAULT_BACKEND}`
@@ -158,7 +160,7 @@ export default function Dashboard() {
 
   // Chart State
   const [chartSymbol, setChartSymbol] = useState<string>('BTC-USDT-SWAP');
-  const [chartResolution, setChartResolution] = useState<string>('15');
+  const [chartResolution, setChartResolution] = useState<string>('240');
   const [candles, setCandles] = useState<CandleData[]>([]);
 
   // Log Coins Filter
@@ -181,18 +183,31 @@ export default function Dashboard() {
   const fetchStatus = async () => {
     try {
       let res = await fetch(`${backendUrl}/api/status`).catch(() => null);
-      if (!res && backendUrl === 'http://localhost:8000') {
-        const railwayUrl = process.env.NEXT_PUBLIC_RAILWAY_URL;
-        if (railwayUrl) {
-          res = await fetch(`${railwayUrl}/api/status`).catch(() => null);
-          if (res) setBackendUrl(railwayUrl);
+      
+      // Failover fallback check if primary backend endpoint fails
+      if (!res || !res.ok) {
+        if (backendUrl !== 'http://localhost:8000') {
+          res = await fetch(`http://localhost:8000/api/status`).catch(() => null);
+          if (res && res.ok) setBackendUrl('http://localhost:8000');
+        } else {
+          const railwayUrl = process.env.NEXT_PUBLIC_RAILWAY_URL;
+          if (railwayUrl) {
+            res = await fetch(`${railwayUrl}/api/status`).catch(() => null);
+            if (res && res.ok) setBackendUrl(railwayUrl);
+          }
         }
       }
 
-      if (!res) return;
+      if (!res || !res.ok) {
+        setBotState('REBUILDING');
+        return;
+      }
 
       const result: StatusResponse = await res.json();
       setData(result);
+      if (result.bot_state || result.status) {
+        setBotState(result.bot_state || result.status);
+      }
       if (result.trading_mode) setTradingMode(result.trading_mode);
 
       const now = new Date().toLocaleTimeString();
@@ -203,7 +218,7 @@ export default function Dashboard() {
         const coinObj = VETERAN_COINS.find(c => c.tag === tag);
         if (coinObj) {
           const p = pr[coinObj.sym]?.last_price;
-          if (p !== undefined && p !== null) {
+          if (p !== undefined && p !== null && p > 0) {
             coinLogParts.push(`${tag}=$${p.toLocaleString()}`);
           }
         }
@@ -212,18 +227,19 @@ export default function Dashboard() {
       if (coinLogParts.length > 0) {
         setLogs((prev) => [
           ...prev.slice(-18),
-          `[${now}] State: ${result.bot_state || result.status} | ${coinLogParts.join(' | ')}`
+          `[${now}] State: ${result.bot_state || result.status} | 4H Swing | ${coinLogParts.join(' | ')}`
         ]);
       }
     } catch (err) {
       console.error('Error fetching backend status:', err);
+      setBotState('REBUILDING');
     }
   };
 
   const fetchCandles = async () => {
     try {
       let res = await fetch(`${backendUrl}/api/candles?symbol=${chartSymbol}&resolution=${chartResolution}`).catch(() => null);
-      if ((!res || res.status === 404) && backendUrl !== 'http://localhost:8000') {
+      if ((!res || !res.ok) && backendUrl !== 'http://localhost:8000') {
         res = await fetch(`http://localhost:8000/api/candles?symbol=${chartSymbol}&resolution=${chartResolution}`).catch(() => null);
       }
 
@@ -271,7 +287,7 @@ export default function Dashboard() {
     const interval = setInterval(() => {
       fetchStatus();
       fetchCandles();
-    }, 5000);
+    }, 4000);
     return () => clearInterval(interval);
   }, [backendUrl, chartSymbol, chartResolution, selectedLogCoins]);
 
@@ -341,7 +357,7 @@ export default function Dashboard() {
       fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
       backgroundImage: 'radial-gradient(circle at 15% 15%, rgba(0, 240, 144, 0.05) 0%, transparent 40%), radial-gradient(circle at 85% 85%, rgba(139, 92, 246, 0.05) 0%, transparent 40%)'
     }}>
-      {/* Header Bar */}
+      {/* Header Bar with Glowing Live Bot Status Badge */}
       <header style={{
         display: 'flex',
         justifyContent: 'space-between',
@@ -352,22 +368,48 @@ export default function Dashboard() {
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           <div style={{
-            width: '40px',
-            height: '40px',
-            borderRadius: '10px',
+            width: '42px',
+            height: '42px',
+            borderRadius: '12px',
             background: 'linear-gradient(135deg, #00f090, #3b82f6)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             fontWeight: 'bold',
-            fontSize: '20px',
-            color: '#000'
+            fontSize: '22px',
+            color: '#000',
+            boxShadow: '0 4px 15px rgba(0, 240, 144, 0.3)'
           }}>
             O
           </div>
           <div>
-            <h1 style={{ fontSize: '20px', fontWeight: '700', margin: 0 }}>WebTraderBot — Institutional 80/20 Portfolio Terminal</h1>
-            <p style={{ fontSize: '12px', color: '#9ca3af', margin: 0 }}>OKX Swaps (80% Delta-Neutral Arbitrage + 20% 1H MTF Scalper R:R 1:1.5)</p>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <h1 style={{ fontSize: '20px', fontWeight: '700', margin: 0 }}>WebTraderBot — Institutional 80/20 Terminal</h1>
+              
+              {/* Glowing Bot Status Indicator Dot */}
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                background: botState === 'RUNNING' || botState === 'OK' ? 'rgba(0, 240, 144, 0.15)' : (botState === 'PAUSED' ? 'rgba(245, 158, 11, 0.15)' : 'rgba(239, 68, 68, 0.15)'),
+                border: `1px solid ${botState === 'RUNNING' || botState === 'OK' ? 'rgba(0, 240, 144, 0.4)' : (botState === 'PAUSED' ? 'rgba(245, 158, 11, 0.4)' : 'rgba(239, 68, 68, 0.4)')}`,
+                padding: '3px 9px',
+                borderRadius: '20px',
+                fontSize: '11px',
+                fontWeight: '700',
+                color: botState === 'RUNNING' || botState === 'OK' ? '#00f090' : (botState === 'PAUSED' ? '#f59e0b' : '#ef4444')
+              }}>
+                <span style={{
+                  width: '8px',
+                  height: '8px',
+                  borderRadius: '50%',
+                  backgroundColor: botState === 'RUNNING' || botState === 'OK' ? '#00f090' : (botState === 'PAUSED' ? '#f59e0b' : '#ef4444'),
+                  boxShadow: `0 0 10px ${botState === 'RUNNING' || botState === 'OK' ? '#00f090' : (botState === 'PAUSED' ? '#f59e0b' : '#ef4444')}`
+                }} />
+                {botState === 'RUNNING' || botState === 'OK' ? 'RUNNING LIVE' : (botState === 'PAUSED' ? 'PAUSED' : 'REBUILDING...')}
+              </div>
+            </div>
+            <p style={{ fontSize: '12px', color: '#9ca3af', margin: 0 }}>OKX Swaps (80% Delta-Neutral Arbitrage + 20% 4H Swing Partial TP Machine)</p>
           </div>
         </div>
 
@@ -558,7 +600,7 @@ export default function Dashboard() {
                 </div>
               </div>
               <div style={{ fontSize: '16px', fontWeight: '700', fontFamily: 'monospace', marginBottom: '3px' }}>
-                {price ? `$${price.toLocaleString(undefined, { minimumFractionDigits: 2 })}` : '$0.00'}
+                {price && price > 0 ? `$${price.toLocaleString(undefined, { minimumFractionDigits: 2 })}` : '$...'}
               </div>
               <div style={{
                 fontSize: '10px',
@@ -585,7 +627,7 @@ export default function Dashboard() {
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
               <h2 style={{ fontSize: '14px', fontWeight: '700', margin: 0 }}>📊 Candlestick & Indicators Chart ({chartSymbol})</h2>
               <div style={{ display: 'flex', gap: '4px' }}>
-                {['5', '15', '60'].map((tf) => (
+                {['5', '15', '60', '240'].map((tf) => (
                   <button
                     key={tf}
                     onClick={() => setChartResolution(tf)}
@@ -600,7 +642,7 @@ export default function Dashboard() {
                       cursor: 'pointer'
                     }}
                   >
-                    {tf === '60' ? '1h' : `${tf}m`}
+                    {tf === '240' ? '4h' : (tf === '60' ? '1h' : `${tf}m`)}
                   </button>
                 ))}
               </div>
@@ -747,7 +789,7 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* 20% Weight 15m Scalping Engine */}
+        {/* 20% Weight 4H Swing Trading Engine */}
         <div style={{
           background: 'rgba(18, 24, 38, 0.75)',
           backdropFilter: 'blur(12px)',
@@ -756,7 +798,7 @@ export default function Dashboard() {
           padding: '20px'
         }}>
           <h2 style={{ fontWeight: '700', fontSize: '14px', marginBottom: '16px', color: '#3b82f6' }}>
-            🎯 20% Scalping Engine (1H MTF)
+            🎯 20% 4H Swing Partial TP Engine
           </h2>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', fontSize: '13px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', paddingBottom: '8px', borderBottom: '1px solid rgba(255, 255, 255, 0.05)' }}>
@@ -765,15 +807,15 @@ export default function Dashboard() {
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', paddingBottom: '8px', borderBottom: '1px solid rgba(255, 255, 255, 0.05)' }}>
               <span style={{ color: '#9ca3af' }}>Macro Filter</span>
-              <span style={{ fontWeight: '700', color: '#00f090' }}>1H Trend Alignment (EMA800)</span>
+              <span style={{ fontWeight: '700', color: '#00f090' }}>Supertrend 10,3.0 + ADX > 20</span>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', paddingBottom: '8px', borderBottom: '1px solid rgba(255, 255, 255, 0.05)' }}>
-              <span style={{ color: '#9ca3af' }}>Risk-to-Reward Ratio</span>
-              <span style={{ fontWeight: '700', color: '#f59e0b' }}>R:R = 1 : 1.5 (TP 2.25x ATR)</span>
+              <span style={{ color: '#9ca3af' }}>Partial TP Architecture</span>
+              <span style={{ fontWeight: '700', color: '#f59e0b' }}>TP1 50% @ 1.5x ATR + Breakeven SL</span>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <span style={{ color: '#9ca3af' }}>Max Drawdown Guard</span>
-              <span style={{ fontWeight: '600', color: '#00f090' }}>🟢 Restricted to 20% Pool</span>
+              <span style={{ color: '#9ca3af' }}>Risk Shield</span>
+              <span style={{ fontWeight: '600', color: '#00f090' }}>🟢 8h Cooldown + Max 8% Heat</span>
             </div>
           </div>
         </div>
@@ -793,7 +835,7 @@ export default function Dashboard() {
                 <th style={{ paddingBottom: '6px' }}>Symbol</th>
                 <th style={{ paddingBottom: '6px' }}>Side</th>
                 <th style={{ paddingBottom: '6px' }}>Entry</th>
-                <th style={{ paddingBottom: '6px' }}>SL / TP</th>
+                <th style={{ paddingBottom: '6px' }}>SL / TP1</th>
               </tr>
             </thead>
             <tbody>
@@ -812,12 +854,12 @@ export default function Dashboard() {
                           background: isLong ? 'rgba(0, 240, 144, 0.15)' : 'rgba(255, 59, 105, 0.15)',
                           color: isLong ? '#00f090' : '#ff3b69'
                         }}>
-                          {pos.side}
+                          {pos.side} {pos.tp1_done ? '(50% BE)' : ''}
                         </span>
                       </td>
                       <td style={{ padding: '6px 0', fontFamily: 'monospace' }}>${pos.entry_price?.toLocaleString()}</td>
                       <td style={{ padding: '6px 0', fontFamily: 'monospace' }}>
-                        <span style={{ color: '#ff3b69' }}>${pos.sl_price?.toLocaleString()}</span> / <span style={{ color: '#00f090' }}>${pos.tp_price?.toLocaleString()}</span>
+                        <span style={{ color: '#ff3b69' }}>${pos.sl_price?.toLocaleString()}</span> / <span style={{ color: '#00f090' }}>${pos.tp1_target ? pos.tp1_target.toLocaleString() : 'RUN'}</span>
                       </td>
                     </tr>
                   );
