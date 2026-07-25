@@ -1,6 +1,14 @@
-# Environment variables
-.env
-.env.local
-*.log
+# WebTraderBot GitIgnore
 __pycache__/
 *.pyc
+.env
+data/backtest_cache/
+data/paper_trading_state.json
+node_modules/
+.next/
+dist/
+
+# Unrelated projects in root
+DormAdmin/
+LineOAChatBot/
+manga-translation-platform/

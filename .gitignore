@@ -3,6 +3,7 @@ __pycache__/
 *.pyc
 .env
 data/backtest_cache/
+data/paper_trading_state.json
 node_modules/
 .next/
 dist/
