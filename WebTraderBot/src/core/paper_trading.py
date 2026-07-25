@@ -30,7 +30,7 @@ class PaperTradingEngine:
         self._load_state()
 
     def _save_state(self):
-        """Save balance, active positions, and trade history to SQLite Database and JSON file."""
+        """Save balance, active positions, and trade history to SQLite Database (2-Table OMS) and JSON file."""
         try:
             state = {
                 "initial_capital": self.initial_capital,
@@ -43,12 +43,13 @@ class PaperTradingEngine:
             with open(self.storage_file, "w", encoding="utf-8") as f:
                 json.dump(state, f, indent=2, ensure_ascii=False)
 
-            # Dual SQLite DB Persistence
+            # Dual SQLite DB Persistence (Order_trade_crypto + Order_successed_crypto)
             self.db.save_bot_state("RUNNING", "PAPER", self.initial_capital, self.current_capital, self.leverage)
             for pos in self.active_positions.values():
-                self.db.save_active_position(pos)
+                pos["status"] = "OPEN"
+                self.db.save_order_trade(pos)
             for trade in self.trade_history[:50]:
-                self.db.log_trade(trade)
+                self.db.log_order_success(trade)
         except Exception as e:
             print(f"[PaperTradingEngine] Dual Save state error: {e}")
 
@@ -57,8 +58,8 @@ class PaperTradingEngine:
         loaded_from_db = False
         try:
             db_state = self.db.get_bot_state()
-            db_positions = self.db.load_active_positions()
-            db_history = self.db.load_trade_history()
+            db_positions = self.db.load_open_positions()
+            db_history = self.db.load_closed_trades_joined()
 
             if db_positions or db_history:
                 self.initial_capital = db_state.get("initial_capital", self.initial_capital)
@@ -67,7 +68,7 @@ class PaperTradingEngine:
                 self.active_positions = db_positions
                 self.trade_history = db_history
                 loaded_from_db = True
-                print(f"[PaperTradingEngine] Restored paper trading state from SQLite DB ({len(self.trade_history)} trades, {len(self.active_positions)} positions)")
+                print(f"[PaperTradingEngine] Restored paper trading state from 2-Table SQLite DB ({len(self.trade_history)} trades, {len(self.active_positions)} positions)")
         except Exception as e:
             print(f"[PaperTradingEngine] SQLite load error: {e}")
 
@@ -443,7 +444,8 @@ class PaperTradingEngine:
 
                 self.trade_history.insert(0, trade_record)
                 closed_trades.append(trade_record)
-                self.db.remove_active_position(symbol)
+                self.db.update_order_status(pos["id"], "CLOSE")
+                self.db.log_order_success(trade_record)
                 del self.active_positions[symbol]
                 state_changed = True
 
@@ -460,8 +462,8 @@ class PaperTradingEngine:
         if symbol not in self.active_positions:
             return {"status": "ERROR", "message": f"No active position found for {symbol}"}
 
-        self.db.remove_active_position(symbol)
         pos = self.active_positions.pop(symbol)
+        self.db.update_order_status(pos["id"], "CLOSE")
         side = pos["side"]
         entry_p = pos["entry_price"]
         
@@ -507,6 +509,7 @@ class PaperTradingEngine:
         }
 
         self.trade_history.insert(0, trade_record)
+        self.db.log_order_success(trade_record)
         self._save_state()
 
         return {

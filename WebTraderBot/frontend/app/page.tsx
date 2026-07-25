@@ -904,7 +904,7 @@ export default function Dashboard() {
               </tr>
             </thead>
               {(() => {
-                const runningPositions = (data?.active_positions || []).filter(pos => (pos.order_status || 'RUN') === 'RUN' && pos.status !== 'CLOSED');
+                const runningPositions = (data?.active_positions || []).filter(pos => pos.status === 'OPEN');
                 return runningPositions.length > 0 ? (
                   runningPositions.map((pos) => {
                     const isLong = pos.side === 'LONG';

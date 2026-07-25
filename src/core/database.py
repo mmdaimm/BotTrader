@@ -1,7 +1,8 @@
 """
 WebTraderBot Relational SQLite Database Manager
-Provides 100% permanent data persistence for active positions, trade history,
-bot configuration, cash flow logs, and audit trails.
+Implements 2-Table Normalized Order Management System Architecture:
+1. Order_trade_crypto: Master order table (status = 'OPEN' / 'CLOSE')
+2. Order_successed_crypto: Execution history table (id_order = FK to Order_trade_crypto)
 """
 
 import os
@@ -26,11 +27,11 @@ class DatabaseManager:
         return conn
 
     def _init_db(self):
-        """Initialize relational schema with 5 dedicated tables."""
+        """Initialize 2-Table Normalized Order Schema."""
         with self.get_connection() as conn:
             cursor = conn.cursor()
             
-            # Table 1: Bot State Config
+            # Global Bot Config Table
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS bot_state_config (
                     id INTEGER PRIMARY KEY CHECK (id = 1),
@@ -43,13 +44,12 @@ class DatabaseManager:
                 )
             """)
 
-            # Table 2: Active Positions
+            # 1. TABLE Order_trade_crypto (Master Order Table)
             cursor.execute("""
-                CREATE TABLE IF NOT EXISTS active_positions (
+                CREATE TABLE IF NOT EXISTS Order_trade_crypto (
                     id TEXT PRIMARY KEY,
                     symbol TEXT NOT NULL,
                     side TEXT NOT NULL,
-                    order_status TEXT DEFAULT 'RUN',
                     timeframe TEXT DEFAULT '4h',
                     leverage INTEGER DEFAULT 3,
                     entry_price REAL NOT NULL,
@@ -64,51 +64,28 @@ class DatabaseManager:
                     realized_pnl REAL DEFAULT 0.0,
                     state TEXT DEFAULT 'ST_OPEN_100',
                     entry_time TEXT NOT NULL,
-                    status TEXT DEFAULT 'OPEN',
+                    status TEXT NOT NULL DEFAULT 'OPEN',
                     market_snapshot_json TEXT
                 )
             """)
 
-            # Migration guard for order_status
-            try:
-                cursor.execute("ALTER TABLE active_positions ADD COLUMN order_status TEXT DEFAULT 'RUN'")
-            except Exception:
-                pass
-
-            # Table 3: Trade History
+            # 2. TABLE Order_successed_crypto (Execution & Settlement Table)
             cursor.execute("""
-                CREATE TABLE IF NOT EXISTS trade_history (
+                CREATE TABLE IF NOT EXISTS Order_successed_crypto (
                     id TEXT PRIMARY KEY,
-                    symbol TEXT NOT NULL,
-                    side TEXT NOT NULL,
+                    id_order TEXT NOT NULL,
                     type TEXT NOT NULL,
-                    order_status TEXT DEFAULT 'CLOSE',
-                    timeframe TEXT DEFAULT '4h',
-                    leverage INTEGER DEFAULT 3,
-                    entry_price REAL NOT NULL,
                     exit_price REAL NOT NULL,
-                    qty REAL NOT NULL,
-                    order_value REAL NOT NULL,
-                    margin_required REAL NOT NULL,
-                    sl_price REAL NOT NULL,
-                    tp_price REAL NOT NULL,
                     net_pnl REAL NOT NULL,
                     pnl_pct REAL NOT NULL,
                     holding_duration_sec INTEGER DEFAULT 0,
                     holding_duration_formatted TEXT,
-                    entry_time TEXT NOT NULL,
                     exit_time TEXT NOT NULL,
                     day_of_week TEXT,
                     hour_of_day INTEGER,
-                    market_snapshot_json TEXT
+                    FOREIGN KEY (id_order) REFERENCES Order_trade_crypto(id) ON DELETE CASCADE
                 )
             """)
-
-            # Migration guard for order_status in trade_history
-            try:
-                cursor.execute("ALTER TABLE trade_history ADD COLUMN order_status TEXT DEFAULT 'CLOSE'")
-            except Exception:
-                pass
 
             # Table 4: Cashflow Logs (80% Funding Rate Arbitrage)
             cursor.execute("""
@@ -160,19 +137,18 @@ class DatabaseManager:
                 return dict(row)
             return {}
 
-    def save_active_position(self, pos: Dict[str, Any]):
-        """Save or update an active position record in SQLite."""
+    def save_order_trade(self, pos: Dict[str, Any]):
+        """Save or update an order record in Order_trade_crypto table."""
         with self.get_connection() as conn:
             cursor = conn.cursor()
             snapshot_str = json.dumps(pos.get("market_snapshot", {}))
             cursor.execute("""
-                INSERT INTO active_positions (
-                    id, symbol, side, order_status, timeframe, leverage, entry_price, qty, order_value,
+                INSERT INTO Order_trade_crypto (
+                    id, symbol, side, timeframe, leverage, entry_price, qty, order_value,
                     margin_required, initial_margin, sl_price, tp_price, tp1_target,
                     tp1_done, realized_pnl, state, entry_time, status, market_snapshot_json
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
-                    order_status = excluded.order_status,
                     qty = excluded.qty,
                     margin_required = excluded.margin_required,
                     sl_price = excluded.sl_price,
@@ -183,7 +159,7 @@ class DatabaseManager:
                     state = excluded.state,
                     status = excluded.status
             """, (
-                pos["id"], pos["symbol"], pos["side"], pos.get("order_status", "RUN"), pos.get("timeframe", "4h"), pos.get("leverage", 3),
+                pos["id"], pos["symbol"], pos["side"], pos.get("timeframe", "4h"), pos.get("leverage", 3),
                 pos["entry_price"], pos["qty"], pos["order_value"], pos["margin_required"],
                 pos.get("initial_margin", pos["margin_required"]), pos["sl_price"],
                 pos.get("tp_price", pos.get("tp1_target", 0.0)), pos.get("tp1_target", 0.0),
@@ -193,41 +169,37 @@ class DatabaseManager:
             ))
             conn.commit()
 
-    def remove_active_position(self, pos_id: str):
-        """Remove a closed position from SQLite active_positions table."""
+    def update_order_status(self, pos_id: str, new_status: str = "CLOSE"):
+        """Update status of an order in Order_trade_crypto (e.g. OPEN -> CLOSE)."""
         with self.get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("DELETE FROM active_positions WHERE id = ? OR symbol = ?", (pos_id, pos_id))
+            cursor.execute("UPDATE Order_trade_crypto SET status = ? WHERE id = ? OR symbol = ?", (new_status, pos_id, pos_id))
             conn.commit()
 
-    def log_trade(self, trade: Dict[str, Any]):
-        """Insert a closed trade record into SQLite trade_history table."""
+    def log_order_success(self, trade: Dict[str, Any]):
+        """Insert execution record into Order_successed_crypto table."""
         with self.get_connection() as conn:
             cursor = conn.cursor()
-            snapshot_str = json.dumps(trade.get("market_snapshot", {}))
             cursor.execute("""
-                INSERT OR REPLACE INTO trade_history (
-                    id, symbol, side, type, order_status, timeframe, leverage, entry_price, exit_price,
-                    qty, order_value, margin_required, sl_price, tp_price, net_pnl,
-                    pnl_pct, holding_duration_sec, holding_duration_formatted,
-                    entry_time, exit_time, day_of_week, hour_of_day, market_snapshot_json
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT OR REPLACE INTO Order_successed_crypto (
+                    id, id_order, type, exit_price, net_pnl, pnl_pct,
+                    holding_duration_sec, holding_duration_formatted,
+                    exit_time, day_of_week, hour_of_day
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
-                trade["id"], trade["symbol"], trade["side"], trade["type"], trade.get("order_status", "CLOSE"), trade.get("timeframe", "4h"),
-                trade.get("leverage", 3), trade["entry_price"], trade["exit_price"], trade["qty"],
-                trade["order_value"], trade["margin_required"], trade["sl_price"], trade["tp_price"],
-                trade["net_pnl"], trade["pnl_pct"], trade.get("holding_duration_sec", 0),
-                trade.get("holding_duration_formatted", ""), trade["entry_time"], trade["exit_time"],
-                trade.get("day_of_week", ""), trade.get("hour_of_day", 0), snapshot_str
+                trade["id"], trade.get("id_order", trade["id"].replace("-TP1", "").replace("-CLOSE", "")), trade["type"],
+                trade["exit_price"], trade["net_pnl"], trade["pnl_pct"],
+                trade.get("holding_duration_sec", 0), trade.get("holding_duration_formatted", ""),
+                trade["exit_time"], trade.get("day_of_week", ""), trade.get("hour_of_day", 0)
             ))
             conn.commit()
 
-    def load_active_positions(self) -> Dict[str, Dict[str, Any]]:
-        """Load all active positions with order_status='RUN' from SQLite database."""
+    def load_open_positions(self) -> Dict[str, Dict[str, Any]]:
+        """Load all active positions with status='OPEN' from Order_trade_crypto."""
         positions = {}
         with self.get_connection() as conn:
             cursor = conn.cursor()
-            rows = cursor.execute("SELECT * FROM active_positions WHERE status = 'OPEN' AND order_status = 'RUN'").fetchall()
+            rows = cursor.execute("SELECT * FROM Order_trade_crypto WHERE status = 'OPEN'").fetchall()
             for r in rows:
                 d = dict(r)
                 d["tp1_done"] = bool(d["tp1_done"])
@@ -239,20 +211,43 @@ class DatabaseManager:
                 positions[d["symbol"]] = d
         return positions
 
-    def load_trade_history(self, limit: int = 50) -> List[Dict[str, Any]]:
-        """Load closed trade records with order_status='CLOSE' from SQLite database."""
+    def load_closed_trades_joined(self, limit: int = 50) -> List[Dict[str, Any]]:
+        """Load closed trade records joined between Order_successed_crypto and Order_trade_crypto."""
         history = []
         with self.get_connection() as conn:
             cursor = conn.cursor()
-            rows = cursor.execute("SELECT * FROM trade_history WHERE order_status = 'CLOSE' ORDER BY exit_time DESC LIMIT ?", (limit,)).fetchall()
+            query = """
+                SELECT 
+                    s.id AS id,
+                    s.id_order AS id_order,
+                    t.symbol AS symbol,
+                    t.side AS side,
+                    s.type AS type,
+                    t.timeframe AS timeframe,
+                    t.leverage AS leverage,
+                    t.entry_price AS entry_price,
+                    s.exit_price AS exit_price,
+                    t.qty AS qty,
+                    t.order_value AS order_value,
+                    t.margin_required AS margin_required,
+                    t.sl_price AS sl_price,
+                    t.tp1_target AS tp_price,
+                    s.net_pnl AS net_pnl,
+                    s.pnl_pct AS pnl_pct,
+                    s.holding_duration_sec AS holding_duration_sec,
+                    s.holding_duration_formatted AS holding_duration_formatted,
+                    t.entry_time AS entry_time,
+                    s.exit_time AS exit_time,
+                    s.day_of_week AS day_of_week,
+                    s.hour_of_day AS hour_of_day
+                FROM Order_successed_crypto s
+                JOIN Order_trade_crypto t ON s.id_order = t.id
+                ORDER BY s.exit_time DESC
+                LIMIT ?
+            """
+            rows = cursor.execute(query, (limit,)).fetchall()
             for r in rows:
-                d = dict(r)
-                if d.get("market_snapshot_json"):
-                    try:
-                        d["market_snapshot"] = json.loads(d["market_snapshot_json"])
-                    except Exception:
-                        d["market_snapshot"] = {}
-                history.append(d)
+                history.append(dict(r))
         return history
 
     def log_audit_event(self, event_type: str, message: str):
