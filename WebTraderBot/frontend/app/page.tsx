@@ -903,6 +903,7 @@ export default function Dashboard() {
                 <th style={{ paddingBottom: '6px' }}>Action (จัดการออเดอร์)</th>
               </tr>
             </thead>
+            <tbody>
               {(() => {
                 const runningPositions = (data?.active_positions || []).filter(pos => pos.status === 'OPEN');
                 return runningPositions.length > 0 ? (
