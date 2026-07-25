@@ -7,21 +7,22 @@ Automatically saves & restores state from data/paper_trading_state.json.
 import time
 import json
 import os
-from src.core.risk_engine import RiskEngine
+from typing import Dict, List, Any
+from src.core.database import DatabaseManager
 
 class PaperTradingEngine:
-    def __init__(self, initial_capital: float = 10000.0, fee_pct: float = 0.0005, leverage: int = 3, storage_file: str = None):
+    def __init__(self, initial_capital: float = 2000.0, leverage: int = 3, fee_pct: float = 0.0005, storage_file: str = None):
         self.initial_capital = initial_capital
         self.current_capital = initial_capital
-        self.fee_pct = fee_pct  # OKX Futures fee (~0.05%)
-        self.leverage = leverage  # Default 3x leverage
-        self.risk_engine = RiskEngine(okx_fee_pct=fee_pct, leverage=leverage)
-        self.active_positions = {}  # { symbol: position_dict }
+        self.leverage = leverage
+        self.fee_pct = fee_pct
+        self.active_positions = {}   # { symbol: position_dict }
         self.trade_history = []     # [ trade_dict ]
         
-        # Disk Storage Setup
+        # Database & Disk Storage Setup
+        self.db = DatabaseManager()
         base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        data_dir = os.path.join(base_dir, "data")
+        data_dir = os.getenv("DATA_DIR", os.path.join(base_dir, "data"))
         os.makedirs(data_dir, exist_ok=True)
         self.storage_file = storage_file or os.path.join(data_dir, "paper_trading_state.json")
         
@@ -29,7 +30,7 @@ class PaperTradingEngine:
         self._load_state()
 
     def _save_state(self):
-        """Save balance, active positions, and trade history to JSON file."""
+        """Save balance, active positions, and trade history to SQLite Database and JSON file."""
         try:
             state = {
                 "initial_capital": self.initial_capital,
@@ -41,12 +42,36 @@ class PaperTradingEngine:
             }
             with open(self.storage_file, "w", encoding="utf-8") as f:
                 json.dump(state, f, indent=2, ensure_ascii=False)
+
+            # Dual SQLite DB Persistence
+            self.db.save_bot_state("RUNNING", "PAPER", self.initial_capital, self.current_capital, self.leverage)
+            for pos in self.active_positions.values():
+                self.db.save_active_position(pos)
+            for trade in self.trade_history[:50]:
+                self.db.log_trade(trade)
         except Exception as e:
-            print(f"[PaperTradingEngine] Save state error: {e}")
+            print(f"[PaperTradingEngine] Dual Save state error: {e}")
 
     def _load_state(self):
-        """Restore state from JSON file on server startup."""
-        if os.path.exists(self.storage_file):
+        """Restore state from SQLite DB or JSON file on server startup."""
+        loaded_from_db = False
+        try:
+            db_state = self.db.get_bot_state()
+            db_positions = self.db.load_active_positions()
+            db_history = self.db.load_trade_history()
+
+            if db_positions or db_history:
+                self.initial_capital = db_state.get("initial_capital", self.initial_capital)
+                self.current_capital = db_state.get("current_capital", self.current_capital)
+                self.leverage = db_state.get("leverage", self.leverage)
+                self.active_positions = db_positions
+                self.trade_history = db_history
+                loaded_from_db = True
+                print(f"[PaperTradingEngine] Restored paper trading state from SQLite DB ({len(self.trade_history)} trades, {len(self.active_positions)} positions)")
+        except Exception as e:
+            print(f"[PaperTradingEngine] SQLite load error: {e}")
+
+        if not loaded_from_db and os.path.exists(self.storage_file):
             try:
                 with open(self.storage_file, "r", encoding="utf-8") as f:
                     state = json.load(f)
@@ -414,6 +439,7 @@ class PaperTradingEngine:
 
                 self.trade_history.insert(0, trade_record)
                 closed_trades.append(trade_record)
+                self.db.remove_active_position(symbol)
                 del self.active_positions[symbol]
                 state_changed = True
 
@@ -430,6 +456,7 @@ class PaperTradingEngine:
         if symbol not in self.active_positions:
             return {"status": "ERROR", "message": f"No active position found for {symbol}"}
 
+        self.db.remove_active_position(symbol)
         pos = self.active_positions.pop(symbol)
         side = pos["side"]
         entry_p = pos["entry_price"]

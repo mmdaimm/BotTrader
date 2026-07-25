@@ -286,6 +286,33 @@ def update_tp1_target(symbol: str = Query(...), new_tp1: float = Query(...)):
         )
     return res
 
+@app.get("/api/export-data")
+def export_trading_data():
+    """Export full trading state backup (active positions, trade history, cashflow logs)."""
+    return {
+        "status": "SUCCESS",
+        "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+        "bot_summary": bot.paper_engine.get_summary(),
+        "active_positions": list(bot.paper_engine.active_positions.values()),
+        "trade_history": bot.paper_engine.trade_history
+    }
+
+@app.post("/api/import-data")
+def import_trading_data(data: dict = Body(...)):
+    """Import and restore full trading state from backup payload."""
+    try:
+        if "active_positions" in data:
+            pos_dict = {}
+            for p in data["active_positions"]:
+                pos_dict[p["symbol"]] = p
+            bot.paper_engine.active_positions = pos_dict
+        if "trade_history" in data:
+            bot.paper_engine.trade_history = data["trade_history"]
+        bot.paper_engine._save_state()
+        return {"status": "SUCCESS", "message": "📥 Trading state backup imported successfully!"}
+    except Exception as e:
+        return {"status": "ERROR", "message": f"Failed to import trading state: {e}"}
+
 if __name__ == "__main__":
     import uvicorn
     port = int(os.getenv("PORT", 8080))
