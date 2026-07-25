@@ -313,6 +313,11 @@ def import_trading_data(data: dict = Body(...)):
     except Exception as e:
         return {"status": "ERROR", "message": f"Failed to import trading state: {e}"}
 
+@app.get("/api/active-monitoring-status")
+def get_active_monitoring_status():
+    """Return real-time Active Monitoring Engine diagnostic status and last 30m scan telemetry."""
+    return bot.active_monitor.last_scan_results
+
 if __name__ == "__main__":
     import uvicorn
     port = int(os.getenv("PORT", 8080))

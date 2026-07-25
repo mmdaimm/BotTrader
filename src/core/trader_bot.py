@@ -9,6 +9,7 @@ from src.core.indicators import TechnicalIndicators
 from src.core.risk_engine import RiskEngine
 from src.core.telegram_bot import TelegramNotifier
 from src.core.paper_trading import PaperTradingEngine
+from src.core.active_monitor import ActiveMonitor
 
 class TraderBot:
     def __init__(self, symbols: list = None, resolution: str = "240", initial_capital: float = 10000.0):
@@ -41,6 +42,7 @@ class TraderBot:
         self.swing_capital_20 = initial_capital * 0.20   # 20% Weight ($2,000)
         
         self.paper_engine = PaperTradingEngine(initial_capital=self.swing_capital_20)
+        self.active_monitor = ActiveMonitor(self.client, self.paper_engine, notifier=self.notifier)
         self.trading_mode = "PAPER"  # "PAPER" or "LIVE"
         self.bot_state = "RUNNING"   # "RUNNING", "PAUSED", "ERROR"
         self.last_signals_sent = {}  # { symbol: signal_key }
@@ -113,10 +115,10 @@ class TraderBot:
         prev_candle_ts = candles[-2]["timestamp"]
 
         # 🟢 LONG 4H Swing Signal Conditions
-        is_long_swing = prev_price > ema200_4h and curr_st["direction"] == 1 and st_turned_green and adx_val > 20.0
+        is_long_swing = prev_price > ema200_4h and curr_st["direction"] == 1 and st_turned_green and adx_val > 18.0
         
         # 🔴 SHORT 4H Swing Signal Conditions
-        is_short_swing = prev_price < ema200_4h and curr_st["direction"] == -1 and st_turned_red and adx_val > 20.0
+        is_short_swing = prev_price < ema200_4h and curr_st["direction"] == -1 and st_turned_red and adx_val > 18.0
         
         if is_long_swing:
             risk_params = self.risk_engine.calculate_position_sizing(self.paper_engine.current_capital, current_price, atr_val, side="LONG", sl_multiplier=2.0, tp_multiplier=3.5)
@@ -234,6 +236,13 @@ class TraderBot:
 
         except Exception as e:
             print(f"[TraderBot] Error updating paper positions: {e}")
+
+        # Trigger Active Monitoring 30m scan if interval elapsed (30 minutes)
+        if time.time() - self.active_monitor.last_scan_timestamp >= self.active_monitor.scan_interval_sec:
+            try:
+                self.active_monitor.run_30m_scan()
+            except Exception as e:
+                print(f"[TraderBot] Error running Active Monitoring 30m scan: {e}")
 
         btc_price = pair_results.get("BTC-USDT-SWAP", {}).get("last_price", 0.0)
         paper_summary = self.paper_engine.get_summary()

@@ -9,6 +9,7 @@ from src.core.indicators import TechnicalIndicators
 from src.core.risk_engine import RiskEngine
 from src.core.telegram_bot import TelegramNotifier
 from src.core.paper_trading import PaperTradingEngine
+from src.core.active_monitor import ActiveMonitor
 
 class TraderBot:
     def __init__(self, symbols: list = None, resolution: str = "240", initial_capital: float = 10000.0):
@@ -41,6 +42,7 @@ class TraderBot:
         self.swing_capital_20 = initial_capital * 0.20   # 20% Weight ($2,000)
         
         self.paper_engine = PaperTradingEngine(initial_capital=self.swing_capital_20)
+        self.active_monitor = ActiveMonitor(self.client, self.paper_engine, notifier=self.notifier)
         self.trading_mode = "PAPER"  # "PAPER" or "LIVE"
         self.bot_state = "RUNNING"   # "RUNNING", "PAUSED", "ERROR"
         self.last_signals_sent = {}  # { symbol: signal_key }
@@ -234,6 +236,13 @@ class TraderBot:
 
         except Exception as e:
             print(f"[TraderBot] Error updating paper positions: {e}")
+
+        # Trigger Active Monitoring 30m scan if interval elapsed (30 minutes)
+        if time.time() - self.active_monitor.last_scan_timestamp >= self.active_monitor.scan_interval_sec:
+            try:
+                self.active_monitor.run_30m_scan()
+            except Exception as e:
+                print(f"[TraderBot] Error running Active Monitoring 30m scan: {e}")
 
         btc_price = pair_results.get("BTC-USDT-SWAP", {}).get("last_price", 0.0)
         paper_summary = self.paper_engine.get_summary()

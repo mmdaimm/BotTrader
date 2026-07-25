@@ -530,6 +530,21 @@ export default function Dashboard() {
             MODE: {tradingMode}
           </button>
 
+          <div style={{
+            background: 'rgba(16, 185, 129, 0.15)',
+            border: '1px solid rgba(16, 185, 129, 0.4)',
+            color: '#10b981',
+            padding: '8px 14px',
+            borderRadius: '8px',
+            fontWeight: '700',
+            fontSize: '12px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px'
+          }}>
+            🛡️ Active Monitoring (30m Loop: Active)
+          </div>
+
           <button onClick={triggerPanic} style={{
             background: 'linear-gradient(135deg, #ff3b69, #dc2626)',
             color: 'white',
