@@ -269,6 +269,7 @@ class PaperTradingEngine:
             "id": f"PAPER-{int(time.time())}-{symbol}-{side}",
             "symbol": symbol,
             "side": side,
+            "order_status": "RUN",
             "timeframe": timeframe,
             "leverage": self.leverage,
             "entry_price": entry_price,

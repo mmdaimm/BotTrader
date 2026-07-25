@@ -49,6 +49,7 @@ class DatabaseManager:
                     id TEXT PRIMARY KEY,
                     symbol TEXT NOT NULL,
                     side TEXT NOT NULL,
+                    order_status TEXT DEFAULT 'RUN',
                     timeframe TEXT DEFAULT '4h',
                     leverage INTEGER DEFAULT 3,
                     entry_price REAL NOT NULL,
@@ -68,6 +69,12 @@ class DatabaseManager:
                 )
             """)
 
+            # Migration guard for order_status
+            try:
+                cursor.execute("ALTER TABLE active_positions ADD COLUMN order_status TEXT DEFAULT 'RUN'")
+            except Exception:
+                pass
+
             # Table 3: Trade History
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS trade_history (
@@ -75,6 +82,7 @@ class DatabaseManager:
                     symbol TEXT NOT NULL,
                     side TEXT NOT NULL,
                     type TEXT NOT NULL,
+                    order_status TEXT DEFAULT 'CLOSE',
                     timeframe TEXT DEFAULT '4h',
                     leverage INTEGER DEFAULT 3,
                     entry_price REAL NOT NULL,
@@ -95,6 +103,12 @@ class DatabaseManager:
                     market_snapshot_json TEXT
                 )
             """)
+
+            # Migration guard for order_status in trade_history
+            try:
+                cursor.execute("ALTER TABLE trade_history ADD COLUMN order_status TEXT DEFAULT 'CLOSE'")
+            except Exception:
+                pass
 
             # Table 4: Cashflow Logs (80% Funding Rate Arbitrage)
             cursor.execute("""
@@ -153,11 +167,12 @@ class DatabaseManager:
             snapshot_str = json.dumps(pos.get("market_snapshot", {}))
             cursor.execute("""
                 INSERT INTO active_positions (
-                    id, symbol, side, timeframe, leverage, entry_price, qty, order_value,
+                    id, symbol, side, order_status, timeframe, leverage, entry_price, qty, order_value,
                     margin_required, initial_margin, sl_price, tp_price, tp1_target,
                     tp1_done, realized_pnl, state, entry_time, status, market_snapshot_json
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
+                    order_status = excluded.order_status,
                     qty = excluded.qty,
                     margin_required = excluded.margin_required,
                     sl_price = excluded.sl_price,
@@ -168,7 +183,7 @@ class DatabaseManager:
                     state = excluded.state,
                     status = excluded.status
             """, (
-                pos["id"], pos["symbol"], pos["side"], pos.get("timeframe", "4h"), pos.get("leverage", 3),
+                pos["id"], pos["symbol"], pos["side"], pos.get("order_status", "RUN"), pos.get("timeframe", "4h"), pos.get("leverage", 3),
                 pos["entry_price"], pos["qty"], pos["order_value"], pos["margin_required"],
                 pos.get("initial_margin", pos["margin_required"]), pos["sl_price"],
                 pos.get("tp_price", pos.get("tp1_target", 0.0)), pos.get("tp1_target", 0.0),
@@ -192,13 +207,13 @@ class DatabaseManager:
             snapshot_str = json.dumps(trade.get("market_snapshot", {}))
             cursor.execute("""
                 INSERT OR REPLACE INTO trade_history (
-                    id, symbol, side, type, timeframe, leverage, entry_price, exit_price,
+                    id, symbol, side, type, order_status, timeframe, leverage, entry_price, exit_price,
                     qty, order_value, margin_required, sl_price, tp_price, net_pnl,
                     pnl_pct, holding_duration_sec, holding_duration_formatted,
                     entry_time, exit_time, day_of_week, hour_of_day, market_snapshot_json
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
-                trade["id"], trade["symbol"], trade["side"], trade["type"], trade.get("timeframe", "4h"),
+                trade["id"], trade["symbol"], trade["side"], trade["type"], trade.get("order_status", "CLOSE"), trade.get("timeframe", "4h"),
                 trade.get("leverage", 3), trade["entry_price"], trade["exit_price"], trade["qty"],
                 trade["order_value"], trade["margin_required"], trade["sl_price"], trade["tp_price"],
                 trade["net_pnl"], trade["pnl_pct"], trade.get("holding_duration_sec", 0),
@@ -208,11 +223,11 @@ class DatabaseManager:
             conn.commit()
 
     def load_active_positions(self) -> Dict[str, Dict[str, Any]]:
-        """Load all active positions from SQLite database."""
+        """Load all active positions with order_status='RUN' from SQLite database."""
         positions = {}
         with self.get_connection() as conn:
             cursor = conn.cursor()
-            rows = cursor.execute("SELECT * FROM active_positions WHERE status = 'OPEN'").fetchall()
+            rows = cursor.execute("SELECT * FROM active_positions WHERE status = 'OPEN' AND order_status = 'RUN'").fetchall()
             for r in rows:
                 d = dict(r)
                 d["tp1_done"] = bool(d["tp1_done"])
@@ -225,11 +240,11 @@ class DatabaseManager:
         return positions
 
     def load_trade_history(self, limit: int = 50) -> List[Dict[str, Any]]:
-        """Load closed trade records from SQLite database."""
+        """Load closed trade records with order_status='CLOSE' from SQLite database."""
         history = []
         with self.get_connection() as conn:
             cursor = conn.cursor()
-            rows = cursor.execute("SELECT * FROM trade_history ORDER BY exit_time DESC LIMIT ?", (limit,)).fetchall()
+            rows = cursor.execute("SELECT * FROM trade_history WHERE order_status = 'CLOSE' ORDER BY exit_time DESC LIMIT ?", (limit,)).fetchall()
             for r in rows:
                 d = dict(r)
                 if d.get("market_snapshot_json"):

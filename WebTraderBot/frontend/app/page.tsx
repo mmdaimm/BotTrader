@@ -903,11 +903,12 @@ export default function Dashboard() {
                 <th style={{ paddingBottom: '6px' }}>Action (จัดการออเดอร์)</th>
               </tr>
             </thead>
-            <tbody>
-              {data?.active_positions && data.active_positions.length > 0 ? (
-                data.active_positions.map((pos) => {
-                  const isLong = pos.side === 'LONG';
-                  const isTp1Done = pos.tp1_done ?? false;
+              {(() => {
+                const runningPositions = (data?.active_positions || []).filter(pos => (pos.order_status || 'RUN') === 'RUN' && pos.status !== 'CLOSED');
+                return runningPositions.length > 0 ? (
+                  runningPositions.map((pos) => {
+                    const isLong = pos.side === 'LONG';
+                    const isTp1Done = pos.tp1_done ?? false;
                   
                   const item = pairs[pos.symbol];
                   const lastPrice = item?.last_price;
@@ -996,7 +997,8 @@ export default function Dashboard() {
                 <tr>
                   <td colSpan={6} style={{ padding: '16px 0', color: '#6b7280', textAlign: 'center' }}>No active positions</td>
                 </tr>
-              )}
+              );
+            })()}
             </tbody>
           </table>
 
