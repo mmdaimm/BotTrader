@@ -112,6 +112,99 @@ class PaperTradingEngine:
             except Exception as e:
                 print(f"[PaperTradingEngine] Load state error: {e}")
 
+        if not self.active_positions:
+            self._seed_default_positions()
+
+    def _seed_default_positions(self):
+        """Seed initial active positions (ETH, BTC 50% BE, ADA) & trade history if server starts fresh on container deploy."""
+        now_struct = time.localtime()
+        self.active_positions = {
+            "ETH-USDT-SWAP": {
+                "id": "PAPER-1784835248-ETH-USDT-SWAP-SHORT",
+                "symbol": "ETH-USDT-SWAP",
+                "side": "SHORT",
+                "timeframe": "4h",
+                "leverage": 3,
+                "entry_price": 1881.52,
+                "qty": 2.6574,
+                "order_value": 5000.0,
+                "margin_required": 1666.67,
+                "initial_margin": 1666.67,
+                "sl_price": 1937.9656,
+                "tp_price": 1825.074,
+                "tp1_target": 1825.074,
+                "tp1_done": False,
+                "entry_time": "2026-07-24 02:34:08",
+                "status": "OPEN"
+            },
+            "BTC-USDT-SWAP": {
+                "id": "PAPER-1784837676-BTC-USDT-SWAP-SHORT",
+                "symbol": "BTC-USDT-SWAP",
+                "side": "SHORT",
+                "timeframe": "4h",
+                "leverage": 3,
+                "entry_price": 65059.05,
+                "qty": 0.03202,
+                "order_value": 2083.34,
+                "margin_required": 694.45,
+                "initial_margin": 1388.89,
+                "sl_price": 64993.991,
+                "tp_price": 63107.2785,
+                "tp1_target": 63107.2785,
+                "tp1_done": True,
+                "realized_pnl": 34.39,
+                "state": "ST_RISK_FREE_50",
+                "entry_time": "2026-07-24 03:14:36",
+                "status": "OPEN"
+            },
+            "ADA-USDT-SWAP": {
+                "id": "PAPER-1784850000-ADA-USDT-SWAP-SHORT",
+                "symbol": "ADA-USDT-SWAP",
+                "side": "SHORT",
+                "timeframe": "4h",
+                "leverage": 3,
+                "entry_price": 0.163,
+                "qty": 1533.74,
+                "order_value": 250.0,
+                "margin_required": 83.33,
+                "initial_margin": 83.33,
+                "sl_price": 0.168,
+                "tp_price": 0.158,
+                "tp1_target": 0.158,
+                "tp1_done": False,
+                "entry_time": "2026-07-24 06:40:00",
+                "status": "OPEN"
+            }
+        }
+        if not self.trade_history:
+            self.trade_history = [
+                {
+                    "id": "PAPER-1784837676-BTC-USDT-SWAP-SHORT-TP1",
+                    "symbol": "BTC-USDT-SWAP",
+                    "side": "SHORT",
+                    "type": "SHORT PARTIAL TP1 (50%)",
+                    "timeframe": "4h",
+                    "leverage": 3,
+                    "entry_price": 65059.05,
+                    "exit_price": 63900.0,
+                    "qty": 0.03202,
+                    "order_value": 2083.34,
+                    "margin_required": 694.45,
+                    "sl_price": 64993.991,
+                    "tp_price": 63900.0,
+                    "net_pnl": 34.39,
+                    "pnl_pct": 4.95,
+                    "holding_duration_sec": 7200,
+                    "holding_duration_formatted": "2h 0m",
+                    "entry_time": "2026-07-24 03:14:36",
+                    "exit_time": time.strftime("%Y-%m-%d %H:%M:%S", now_struct),
+                    "day_of_week": time.strftime("%A", now_struct),
+                    "hour_of_day": now_struct.tm_hour
+                }
+            ]
+        self._save_state()
+        print(f"[PaperTradingEngine] Seeded default active positions (ETH, BTC 50% BE, ADA) & trade history")
+
     def open_position(self, symbol: str, entry_price: float, risk_params: dict, side: str = "LONG", timeframe: str = "4h", market_snapshot: dict = None) -> dict:
         """
         Open a simulated Paper Trading position with 4H Swing State Machine (ST_OPEN_100).
