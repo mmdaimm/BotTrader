@@ -162,26 +162,6 @@ class PaperTradingEngine:
                 "entry_time": "2026-07-24 02:34:08",
                 "status": "OPEN"
             },
-            "BTC-USDT-SWAP": {
-                "id": "PAPER-1784837676-BTC-USDT-SWAP-SHORT",
-                "symbol": "BTC-USDT-SWAP",
-                "side": "SHORT",
-                "timeframe": "4h",
-                "leverage": 3,
-                "entry_price": 65059.05,
-                "qty": 0.03202,
-                "order_value": 2083.34,
-                "margin_required": 694.45,
-                "initial_margin": 1388.89,
-                "sl_price": 64993.991,
-                "tp_price": 63107.2785,
-                "tp1_target": 63107.2785,
-                "tp1_done": True,
-                "realized_pnl": 34.39,
-                "state": "ST_RISK_FREE_50",
-                "entry_time": "2026-07-24 03:14:36",
-                "status": "OPEN"
-            },
             "ADA-USDT-SWAP": {
                 "id": "PAPER-1784850000-ADA-USDT-SWAP-SHORT",
                 "symbol": "ADA-USDT-SWAP",
@@ -204,6 +184,29 @@ class PaperTradingEngine:
         if not self.trade_history:
             self.trade_history = [
                 {
+                    "id": "PAPER-1784837676-BTC-USDT-SWAP-SHORT-CLOSE",
+                    "symbol": "BTC-USDT-SWAP",
+                    "side": "SHORT",
+                    "type": "SHORT MANUAL MARKET CLOSE",
+                    "timeframe": "4h",
+                    "leverage": 3,
+                    "entry_price": 65059.05,
+                    "exit_price": 64162.83,
+                    "qty": 0.03202,
+                    "order_value": 2083.34,
+                    "margin_required": 694.45,
+                    "sl_price": 64993.991,
+                    "tp_price": 63107.2785,
+                    "net_pnl": 26.63,
+                    "pnl_pct": 3.83,
+                    "holding_duration_sec": 7200,
+                    "holding_duration_formatted": "2h 0m",
+                    "entry_time": "2026-07-24 03:14:36",
+                    "exit_time": time.strftime("%Y-%m-%d %H:%M:%S", now_struct),
+                    "day_of_week": time.strftime("%A", now_struct),
+                    "hour_of_day": now_struct.tm_hour
+                },
+                {
                     "id": "PAPER-1784837676-BTC-USDT-SWAP-SHORT-TP1",
                     "symbol": "BTC-USDT-SWAP",
                     "side": "SHORT",
@@ -222,13 +225,13 @@ class PaperTradingEngine:
                     "holding_duration_sec": 7200,
                     "holding_duration_formatted": "2h 0m",
                     "entry_time": "2026-07-24 03:14:36",
-                    "exit_time": time.strftime("%Y-%m-%d %H:%M:%S", now_struct),
-                    "day_of_week": time.strftime("%A", now_struct),
-                    "hour_of_day": now_struct.tm_hour
+                    "exit_time": "2026-07-25 10:00:00",
+                    "day_of_week": "Saturday",
+                    "hour_of_day": 10
                 }
             ]
         self._save_state()
-        print(f"[PaperTradingEngine] Seeded default active positions (ETH, BTC 50% BE, ADA) & trade history")
+        print(f"[PaperTradingEngine] Seeded default active positions (ETH, ADA) & trade history")
 
     def open_position(self, symbol: str, entry_price: float, risk_params: dict, side: str = "LONG", timeframe: str = "4h", market_snapshot: dict = None) -> dict:
         """
