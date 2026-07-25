@@ -65,6 +65,49 @@ class PaperTradingEngine:
                             else:
                                 pos["tp1_target"] = round(pos["entry_price"] - (1.5 * atr), 4)
 
+                    # Backfill missing TP1 trade records into trade_history
+                    history_ids = {t["id"] for t in self.trade_history if "id" in t}
+                    now_struct = time.localtime()
+                    for sym, pos in self.active_positions.items():
+                        tp1_trade_id = f"{pos.get('id', 'POS')}-TP1"
+                        if pos.get("tp1_done") and tp1_trade_id not in history_ids:
+                            tp1_qty = pos["qty"]
+                            entry_p = pos["entry_price"]
+                            tp1_exit_p = pos.get("tp1_target", entry_p)
+                            entry_val = tp1_qty * entry_p
+                            exit_val = tp1_qty * tp1_exit_p
+                            fee = (exit_val + entry_val) * self.fee_pct
+                            side = pos["side"]
+                            gross_pnl = (exit_val - entry_val) if side == "LONG" else (entry_val - exit_val)
+                            net_pnl_tp1 = pos.get("realized_pnl", round(gross_pnl - fee, 2))
+
+                            trade_record = {
+                                "id": tp1_trade_id,
+                                "symbol": sym,
+                                "side": side,
+                                "type": f"{side} PARTIAL TP1 (50%)",
+                                "timeframe": pos.get("timeframe", "4h"),
+                                "leverage": pos.get("leverage", 3),
+                                "entry_price": entry_p,
+                                "exit_price": tp1_exit_p,
+                                "qty": tp1_qty,
+                                "order_value": round(entry_val, 2),
+                                "margin_required": round(pos.get("margin_required", 100.0), 2),
+                                "sl_price": pos["sl_price"],
+                                "tp_price": pos.get("tp1_target", entry_p),
+                                "net_pnl": round(net_pnl_tp1, 2),
+                                "pnl_pct": round((net_pnl_tp1 / pos.get("margin_required", 100.0)) * 100, 2),
+                                "holding_duration_sec": 3600,
+                                "holding_duration_formatted": "1h 0m",
+                                "entry_time": pos.get("entry_time", time.strftime("%Y-%m-%d %H:%M:%S", now_struct)),
+                                "exit_time": time.strftime("%Y-%m-%d %H:%M:%S", now_struct),
+                                "day_of_week": time.strftime("%A", now_struct),
+                                "hour_of_day": now_struct.tm_hour,
+                                "market_snapshot": pos.get("market_snapshot", {})
+                            }
+                            self.trade_history.insert(0, trade_record)
+                            history_ids.add(tp1_trade_id)
+
                     print(f"[PaperTradingEngine] Restored paper trading state with 4H Swing State Machine ({len(self.trade_history)} trades, {len(self.active_positions)} positions)")
             except Exception as e:
                 print(f"[PaperTradingEngine] Load state error: {e}")
@@ -204,11 +247,11 @@ class PaperTradingEngine:
                         "exit_price": tp1_exit_p,
                         "qty": tp1_qty,
                         "order_value": round(entry_val, 2),
-                        "margin_required": round(pos["initial_margin"] * 0.5, 2),
+                        "margin_required": round(pos.get("initial_margin", pos.get("margin_required", 100.0)) * 0.5, 2),
                         "sl_price": pos["sl_price"],
                         "tp_price": pos["tp1_target"],
                         "net_pnl": round(net_pnl_tp1, 2),
-                        "pnl_pct": round((net_pnl_tp1 / (pos["initial_margin"] * 0.5)) * 100, 2),
+                        "pnl_pct": round((net_pnl_tp1 / (pos.get("margin_required", 100.0) * 0.5)) * 100, 2),
                         "holding_duration_sec": holding_time_sec,
                         "holding_duration_formatted": f"{holding_time_sec // 3600}h {(holding_time_sec % 3600) // 60}m",
                         "entry_time": pos["entry_time"],
