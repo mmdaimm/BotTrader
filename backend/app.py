@@ -5,7 +5,7 @@ Supports OKX Perpetual Swaps across 15 Veteran Crypto Instruments (Age > 5 Years
 Features Non-Blocking ProcessPoolExecutor Backtest Engine & Daily Cash Flow System.
 """
 
-from fastapi import FastAPI, Query, BackgroundTasks, Response, status
+from fastapi import FastAPI, Query, BackgroundTasks, Response, status, Body
 from fastapi.middleware.cors import CORSMiddleware
 import sys
 import os
