@@ -255,7 +255,11 @@ def sim_buy(symbol: str = Query("BTC-USDT-SWAP"), side: str = Query("LONG")):
         )
         
         if okx_res.get("status") == "SUCCESS":
-            msg = f"🟢 ส่งออเดอร์เข้า OKX Demo Account สำเร็จ! (Order ID: {okx_res.get('order_id')})\nเปิด {side} สำหรับ {symbol} ที่ราคา ${price:,.2f}\nตั้ง SL: ${sl_price:,.4f} | TP: ${tp_price:,.4f} อัตโนมัติ"
+            ord_id = okx_res.get('order_id', '')
+            if symbol in bot.paper_engine.active_positions:
+                bot.paper_engine.active_positions[symbol]["okx_order_id"] = ord_id
+                bot.paper_engine._save_state()
+            msg = f"🟢 ส่งออเดอร์เข้า OKX Demo Account สำเร็จ! (Order ID: #{ord_id})\nเปิด {side} สำหรับ {symbol} ที่ราคา ${price:,.2f}\nตั้ง SL: ${sl_price:,.4f} | TP: ${tp_price:,.4f} อัตโนมัติ"
         else:
             msg = f"เปิดออเดอร์จำลอง Paper {side} สำหรับ {symbol} ที่ราคา ${price:,.2f} (OKX Note: {okx_res.get('message', 'Paper Mode')})"
 

@@ -353,6 +353,34 @@ class OKXClient:
                         "tp_price": tp_price,
                         "raw_response": data
                     }
+                elif data.get("code") in ["51000", "51119", "51008"]:
+                    # Auto-Retry Net Mode Fallback if OKX account is in Net Mode (remove posSide)
+                    payload_net = payload.copy()
+                    payload_net.pop("posSide", None)
+                    body_net = json.dumps(payload_net)
+                    headers_net = self._get_headers("POST", path, body_net)
+                    req_net = urllib.request.Request(url, data=body_net.encode('utf-8'), headers=headers_net, method="POST")
+                    with urllib.request.urlopen(req_net, timeout=5) as resp_net:
+                        data_net = json.loads(resp_net.read().decode())
+                        if data_net.get("code") == "0" and data_net.get("data"):
+                            order_info = data_net["data"][0]
+                            return {
+                                "status": "SUCCESS",
+                                "order_id": order_info.get("ordId"),
+                                "symbol": symbol,
+                                "side": side,
+                                "contracts": sz_contracts,
+                                "sl_price": sl_price,
+                                "tp_price": tp_price,
+                                "raw_response": data_net
+                            }
+                        else:
+                            return {
+                                "status": "API_ERROR",
+                                "code": data_net.get("code"),
+                                "message": data_net.get("msg", "OKX Net-mode order failed"),
+                                "raw_response": data_net
+                            }
                 else:
                     return {
                         "status": "API_ERROR",

@@ -1043,8 +1043,14 @@ export default function Dashboard() {
                   const isProfit = pnl >= 0;
 
                   return (
-                    <tr key={pos.id} style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.05)' }}>
-                      <td style={{ padding: '6px 0', fontWeight: 'bold' }}>{pos.symbol.split('-')[0]}</td>
+                      <td style={{ padding: '6px 0', fontWeight: 'bold' }}>
+                        {pos.symbol.split('-')[0]}
+                        {pos.okx_order_id && (
+                          <div style={{ fontSize: '9px', color: '#00f090', fontWeight: '500' }}>
+                            🟢 OKX Order #{pos.okx_order_id}
+                          </div>
+                        )}
+                      </td>
                       <td style={{ padding: '6px 0' }}>
                         <span style={{
                           padding: '2px 6px',
