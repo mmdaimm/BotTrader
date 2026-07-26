@@ -1046,19 +1046,23 @@ export default function Dashboard() {
                   
                   const item = pairs[pos.symbol];
                   const lastPrice = item?.last_price;
-                  let pnl = pos.unrealized_pnl || 0.0;
-                  let pnlPct = pos.unrealized_pnl_pct || 0.0;
+                  let pnl = pos.unrealized_pnl ?? 0.0;
+                  let pnlPct = pos.pnl_pct ?? pos.unrealized_pnl_pct ?? 0.0;
 
-                  if (lastPrice && pos.entry_price && pos.qty) {
+                  if (typeof pos.pnl_pct === 'number' && pos.pnl_pct !== 0) {
+                    pnlPct = pos.pnl_pct;
+                  } else if (lastPrice && pos.entry_price && pos.qty) {
                     if (isLong) {
                       pnl = (lastPrice - pos.entry_price) * pos.qty;
                     } else {
                       pnl = (pos.entry_price - lastPrice) * pos.qty;
                     }
-                    const margin = pos.margin_required || pos.margin || 1.0;
-                    pnlPct = (pnl / margin) * 100.0;
+                    const orderVal = pos.order_value || (pos.qty * pos.entry_price) || 1.0;
+                    pnlPct = (pnl / orderVal) * 100.0;
                   }
                   const isProfit = pnl >= 0;
+                  const slVal = pos.sl_price || pos.sl || 0;
+                  const tpVal = pos.tp1_target || pos.tp_price || pos.tp || 0;
 
                   return (
                     <tr key={pos.id} style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.05)' }}>
@@ -1100,14 +1104,16 @@ export default function Dashboard() {
                         {isProfit ? '+' : ''}${pnl.toFixed(2)} ({isProfit ? '+' : ''}{pnlPct.toFixed(2)}%)
                       </td>
                       <td style={{ padding: '6px 0', fontFamily: 'monospace' }}>
-                        <span style={{ color: '#ff3b69' }}>${pos.sl_price?.toLocaleString()}</span> / <span style={{ color: '#00f090' }}>
+                        <span style={{ color: '#ff3b69' }}>
+                          {slVal > 0 ? `$${slVal.toLocaleString()}` : 'N/A (OKX)'}
+                        </span> / <span style={{ color: '#00f090' }}>
                           {isTp1Done ? (
                             'RUN (TP1 Done 🟢)'
                           ) : (
                             <>
-                              {pos.tp1_target ? `$${pos.tp1_target.toLocaleString()}` : (pos.tp_price ? `$${pos.tp_price.toLocaleString()}` : 'RUN')}{' '}
+                              {tpVal > 0 ? `$${tpVal.toLocaleString()}` : 'RUN'}{' '}
                               <button
-                                onClick={() => editTp1Target(pos.symbol, pos.tp1_target || pos.tp_price || 0)}
+                                onClick={() => editTp1Target(pos.symbol, tpVal)}
                                 title="แก้ไขเป้าหมายราคา TP1"
                                 style={{
                                   background: 'rgba(0, 240, 144, 0.15)',
