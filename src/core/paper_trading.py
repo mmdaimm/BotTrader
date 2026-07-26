@@ -572,3 +572,19 @@ class PaperTradingEngine:
             "win_rate_pct": round(win_rate, 2),
             "active_positions_count": len(self.active_positions)
         }
+
+    def reset_engine_state(self):
+        """Purge memory dictionaries, disk JSON file, and SQLite database tables."""
+        self.active_positions = {}
+        self.trade_history = []
+        self.current_capital = self.initial_capital
+        
+        try:
+            if os.path.exists(self.storage_file):
+                os.remove(self.storage_file)
+        except Exception as e:
+            print(f"[PaperTradingEngine] Failed to delete storage file: {e}")
+
+        self.db.clear_all_positions_and_history()
+        self._save_state()
+        print("[PaperTradingEngine] Engine state completely reset and purged!")

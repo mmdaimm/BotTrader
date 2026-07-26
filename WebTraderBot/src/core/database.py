@@ -311,3 +311,12 @@ class DatabaseManager:
             cursor = conn.cursor()
             cursor.execute("INSERT INTO system_audit_logs (event_type, message) VALUES (?, ?)", (event_type, message))
             conn.commit()
+
+    def clear_all_positions_and_history(self):
+        """Purge all rows from Order_trade_crypto and Order_successed_crypto tables."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM Order_successed_crypto")
+            cursor.execute("DELETE FROM Order_trade_crypto")
+            conn.commit()
+            print("[DatabaseManager] Purged all rows from Order_trade_crypto and Order_successed_crypto!")

@@ -416,6 +416,23 @@ export default function Dashboard() {
     }
   };
 
+  const clearDataHistory = async () => {
+    if (confirm("🗑️ ยืนยันการล้างข้อมูล Active Positions และ Closed Trades History ทั้งหมดออกจากระบบใช่หรือไม่?\n\n(การล้างนี้จะลบออเดอร์เก่าออกจาก SQLite DB และความจำเครื่องอย่างถาวร)")) {
+      try {
+        const res = await fetch(`${backendUrl}/api/clear-positions-history`, { method: 'POST' });
+        const resData = await res.json();
+        if (resData.status === 'SUCCESS') {
+          alert(`🟢 ${resData.message}`);
+          fetchStatus();
+        } else {
+          alert(`🔴 ${resData.message}`);
+        }
+      } catch (err) {
+        alert(`🔴 เกิดข้อผิดพลาดในการล้างข้อมูล: ${err}`);
+      }
+    }
+  };
+
   const pairs = data?.pair_results || {};
   const summary = data?.paper_summary;
 
@@ -625,6 +642,19 @@ export default function Dashboard() {
             cursor: 'pointer'
           }}>
             🔄 Restore Active Demo Positions
+          </button>
+
+          <button onClick={clearDataHistory} style={{
+            background: 'rgba(239, 68, 68, 0.15)',
+            border: '1px solid rgba(239, 68, 68, 0.4)',
+            color: '#f87171',
+            padding: '8px 14px',
+            borderRadius: '8px',
+            fontWeight: '700',
+            fontSize: '12px',
+            cursor: 'pointer'
+          }}>
+            🗑️ Clear Demo Data
           </button>
 
           <button onClick={triggerPanic} style={{

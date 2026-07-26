@@ -267,12 +267,21 @@ def close_position_manually(symbol: str = Query(...)):
     """
     OKX Perpetual Market Close Endpoint.
     Manually close an active position for the requested symbol using real-time market price.
+    Also executes close-position on OKX Demo API directly (POST /api/v5/trade/close-position).
     """
     candles = bot.client.get_candles(symbol=symbol, resolution="4H", limit=10)
     if not candles:
         return {"status": "ERROR", "message": f"Failed to fetch market price for {symbol}"}
     
     current_price = candles[-1]["close"]
+    pos_side = "LONG"
+    if symbol in bot.paper_engine.active_positions:
+        pos_side = bot.paper_engine.active_positions[symbol].get("side", "LONG")
+
+    # 1. Close position on OKX Demo API directly
+    okx_close_res = bot.client.close_position_on_okx(symbol, pos_side)
+
+    # 2. Close position in local Paper Engine & SQLite DB
     res = bot.paper_engine.close_position_manually(symbol, current_price)
     if res.get("status") == "SUCCESS":
         trade = res["trade_record"]
@@ -283,7 +292,23 @@ def close_position_manually(symbol: str = Query(...)):
             f"Exit Price: ${trade['exit_price']:,.4f}\n"
             f"Net PnL: ${trade['net_pnl']} ({trade['pnl_pct']}%)"
         )
+        res["okx_close_response"] = okx_close_res
     return res
+
+@app.post("/api/clear-positions-history")
+def clear_positions_history():
+    """
+    Permanently purge all active positions and closed trade history from SQLite and Memory.
+    """
+    try:
+        bot.paper_engine.reset_engine_state()
+        bot.db.clear_all_positions_and_history()
+        return {
+            "status": "SUCCESS",
+            "message": "🟢 ล้างข้อมูล Active Positions และ Closed Trades History ออกจากระบบเรียบร้อยแล้ว!"
+        }
+    except Exception as e:
+        return {"status": "ERROR", "message": f"Failed to clear trading data: {e}"}
 
 @app.post("/api/update-tp1")
 def update_tp1_target(symbol: str = Query(...), new_tp1: float = Query(...)):
