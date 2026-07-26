@@ -296,9 +296,10 @@ class OKXClient:
                 "total_equity": None
             }
 
-    def place_market_order(self, symbol: str, side: str, sz: float, td_mode: str = "isolated") -> dict:
+    def place_market_order(self, symbol: str, side: str, sz: float, sl_price: float = None, tp_price: float = None, td_mode: str = "isolated") -> dict:
         """
         Place Market Order on OKX Demo / Live API (POST /api/v5/trade/order).
+        Supports automatic SL & TP Attached Algo Orders (attachAlgoOrds).
         side: 'LONG' (buy long) or 'SHORT' (sell short)
         """
         self._resolve_keys()
@@ -323,6 +324,18 @@ class OKXClient:
                 "ordType": "market",
                 "sz": str(sz_contracts)
             }
+
+            if sl_price or tp_price:
+                algo_item = {}
+                if sl_price and float(sl_price) > 0:
+                    algo_item["slTriggerPx"] = f"{float(sl_price):.4f}"
+                    algo_item["slOrdPx"] = "-1"
+                if tp_price and float(tp_price) > 0:
+                    algo_item["tpTriggerPx"] = f"{float(tp_price):.4f}"
+                    algo_item["tpOrdPx"] = "-1"
+                if algo_item:
+                    payload["attachAlgoOrds"] = [algo_item]
+
             body = json.dumps(payload)
             headers = self._get_headers("POST", path, body)
             req = urllib.request.Request(url, data=body.encode('utf-8'), headers=headers, method="POST")
@@ -336,6 +349,8 @@ class OKXClient:
                         "symbol": symbol,
                         "side": side,
                         "contracts": sz_contracts,
+                        "sl_price": sl_price,
+                        "tp_price": tp_price,
                         "raw_response": data
                     }
                 else:

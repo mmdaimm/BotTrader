@@ -236,10 +236,30 @@ def sim_buy(symbol: str = Query("BTC-USDT-SWAP"), side: str = Query("LONG")):
     candles = bot.client.get_candles(symbol=symbol, resolution="240", limit=300)
     if candles:
         price = candles[-1]["close"]
-        atr = 0.02 * price
+        atr = TechnicalIndicators.calculate_atr(candles, 14)[-1] if len(candles) >= 14 else 0.02 * price
         risk = bot.risk_engine.calculate_position_sizing(bot.paper_engine.current_capital, price, atr, side=side)
+        
+        sl_price = round(price - (2.0 * atr), 4) if side == "LONG" else round(price + (2.0 * atr), 4)
+        tp_price = round(price + (1.5 * atr), 4) if side == "LONG" else round(price - (1.5 * atr), 4)
+
+        # 1. Open in Local Paper Trading Engine
         res = bot.paper_engine.open_position(symbol, price, risk, side=side)
-        return {"status": "SUCCESS", "message": f"Simulated Paper {side} Order placed for {symbol} at ${price:,.2f}"}
+        
+        # 2. ALSO Execute Order on OKX Demo API directly (x-simulated-trading: 1) with SL/TP attached
+        okx_res = bot.client.place_market_order(
+            symbol=symbol,
+            side=side,
+            sz=risk.get("order_value", 250.0),
+            sl_price=sl_price,
+            tp_price=tp_price
+        )
+        
+        if okx_res.get("status") == "SUCCESS":
+            msg = f"🟢 ส่งออเดอร์เข้า OKX Demo Account สำเร็จ! (Order ID: {okx_res.get('order_id')})\nเปิด {side} สำหรับ {symbol} ที่ราคา ${price:,.2f}\nตั้ง SL: ${sl_price:,.4f} | TP: ${tp_price:,.4f} อัตโนมัติ"
+        else:
+            msg = f"เปิดออเดอร์จำลอง Paper {side} สำหรับ {symbol} ที่ราคา ${price:,.2f} (OKX Note: {okx_res.get('message', 'Paper Mode')})"
+
+        return {"status": "SUCCESS", "message": msg, "okx_response": okx_res}
     return {"status": "ERROR", "message": f"Failed to fetch market data for {symbol}"}
 
 @app.post("/api/close-position")
@@ -409,7 +429,7 @@ def get_active_monitoring_status():
 @app.get("/api/okx/orderbook")
 def get_okx_orderbook(symbol: str = Query("BTC-USDT-SWAP"), depth: int = Query(10)):
     """Fetch live OKX Bids/Asks orderbook depth for trading terminal."""
-    return bot.client.get_orderbook(symbol=symbol, depth=depth)
+    return bot.client.get_okx_orderbook(symbol=symbol, depth=depth) if hasattr(bot.client, 'get_okx_orderbook') else bot.client.get_orderbook(symbol=symbol, depth=depth)
 
 @app.get("/api/okx/balance")
 def get_okx_balance():
