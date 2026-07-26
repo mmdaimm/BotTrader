@@ -566,6 +566,17 @@ class PaperTradingEngine:
             "message": f"Verified & Set OKX TP1 Order for {symbol} ({side}) at ${new_tp1_rounded:,.4f} (Current: ${current_price:,.4f})"
         }
 
+    def update_dynamic_sideway_tps(self, symbol: str, current_sma20: float):
+        """Dynamic TP Update: Update Take Profit target for active Sideway positions every 15m candle based on latest SMA 20."""
+        if symbol in self.active_positions:
+            pos = self.active_positions[symbol]
+            if pos.get("strategy_type") == "SIDEWAY_15M":
+                precision = 4 if current_sma20 < 10 else 2
+                rounded_tp = round(current_sma20, precision)
+                pos["tp1_target"] = rounded_tp
+                pos["tp_price"] = rounded_tp
+                self.db.save_order_trade(pos)
+
     def get_summary(self) -> dict:
         """Return overall Paper Trading statistics."""
         win_trades = [t for t in self.trade_history if t["net_pnl"] > 0]

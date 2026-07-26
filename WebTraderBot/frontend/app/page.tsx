@@ -157,6 +157,8 @@ export default function Dashboard() {
     `Target Backend: ${DEFAULT_BACKEND}`
   ]);
   const [tradingMode, setTradingMode] = useState<string>('PAPER');
+  const [sidewayModeEnabled, setSidewayModeEnabled] = useState<boolean>(false);
+  const [sidewayState, setSidewayState] = useState<string>('DISABLED');
 
   // Chart State
   const [chartSymbol, setChartSymbol] = useState<string>('BTC-USDT-SWAP');
@@ -210,6 +212,8 @@ export default function Dashboard() {
         setBotState(result.bot_state || result.status);
       }
       if (result.trading_mode) setTradingMode(result.trading_mode);
+      if (result.sideway_mode_enabled !== undefined) setSidewayModeEnabled(result.sideway_mode_enabled);
+      if (result.sideway_state) setSidewayState(result.sideway_state);
 
       const now = new Date().toLocaleTimeString();
       const pr = result.pair_results || {};
@@ -320,6 +324,16 @@ export default function Dashboard() {
     const resData = await res.json();
     setTradingMode(resData.mode);
     alert(`Switched to: ${resData.mode} TRADING MODE`);
+  };
+
+  const toggleSidewayMode = async () => {
+    const nextState = !sidewayModeEnabled;
+    const res = await fetch(`${backendUrl}/api/toggle-sideway-mode?enabled=${nextState}`, { method: 'POST' });
+    const resData = await res.json();
+    setSidewayModeEnabled(resData.sideway_mode_enabled);
+    setSidewayState(resData.sideway_state);
+    alert(`15m Sideway Mode updated: ${resData.message}`);
+    fetchStatus();
   };
 
   const simTrade = async (symbol: string, side: string) => {
@@ -528,6 +542,30 @@ export default function Dashboard() {
             cursor: 'pointer'
           }}>
             MODE: {tradingMode}
+          </button>
+
+          <button onClick={toggleSidewayMode} style={{
+            background: sidewayState === 'ACTIVE' 
+              ? 'rgba(16, 185, 129, 0.15)' 
+              : sidewayState === 'STOPPING' 
+              ? 'rgba(245, 158, 11, 0.15)' 
+              : 'rgba(107, 114, 128, 0.15)',
+            border: sidewayState === 'ACTIVE' 
+              ? '1px solid rgba(16, 185, 129, 0.4)' 
+              : sidewayState === 'STOPPING' 
+              ? '1px solid rgba(245, 158, 11, 0.4)' 
+              : '1px solid rgba(107, 114, 128, 0.3)',
+            color: sidewayState === 'ACTIVE' ? '#10b981' : sidewayState === 'STOPPING' ? '#f59e0b' : '#9ca3af',
+            padding: '8px 14px',
+            borderRadius: '8px',
+            fontWeight: '700',
+            fontSize: '12px',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px'
+          }}>
+            {sidewayState === 'ACTIVE' ? '🟢 Sideway Mode: ON' : sidewayState === 'STOPPING' ? '🟡 Sideway Mode: STOPPING' : '⚪ Sideway Mode: OFF'}
           </button>
 
           <div style={{

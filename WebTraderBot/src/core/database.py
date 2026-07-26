@@ -1,7 +1,7 @@
 """
 WebTraderBot Relational SQLite Database Manager
 Implements 2-Table Normalized Order Management System Architecture:
-1. Order_trade_crypto: Master order table (status = 'OPEN' / 'CLOSE')
+1. Order_trade_crypto: Master order table (status = 'OPEN' / 'CLOSE', strategy_type = 'SWING_4H' / 'SIDEWAY_15M')
 2. Order_successed_crypto: Execution history table (id_order = FK to Order_trade_crypto)
 """
 
@@ -37,12 +37,22 @@ class DatabaseManager:
                     id INTEGER PRIMARY KEY CHECK (id = 1),
                     bot_state TEXT NOT NULL DEFAULT 'RUNNING',
                     trading_mode TEXT NOT NULL DEFAULT 'PAPER',
+                    sideway_mode_enabled INTEGER NOT NULL DEFAULT 0,
+                    sideway_state TEXT NOT NULL DEFAULT 'DISABLED',
                     initial_capital REAL NOT NULL DEFAULT 10000.0,
                     current_capital REAL NOT NULL DEFAULT 7250.0,
                     leverage INTEGER NOT NULL DEFAULT 3,
                     last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """)
+
+            # Migration guard for bot_state_config
+            cursor.execute("PRAGMA table_info(bot_state_config)")
+            cols = [r[1] for r in cursor.fetchall()]
+            if "sideway_mode_enabled" not in cols:
+                cursor.execute("ALTER TABLE bot_state_config ADD COLUMN sideway_mode_enabled INTEGER NOT NULL DEFAULT 0")
+            if "sideway_state" not in cols:
+                cursor.execute("ALTER TABLE bot_state_config ADD COLUMN sideway_state TEXT NOT NULL DEFAULT 'DISABLED'")
 
             # 1. TABLE Order_trade_crypto (Master Order Table)
             cursor.execute("""
@@ -51,6 +61,7 @@ class DatabaseManager:
                     symbol TEXT NOT NULL,
                     side TEXT NOT NULL,
                     timeframe TEXT DEFAULT '4h',
+                    strategy_type TEXT DEFAULT 'SWING_4H',
                     leverage INTEGER DEFAULT 3,
                     entry_price REAL NOT NULL,
                     qty REAL NOT NULL,
@@ -68,6 +79,12 @@ class DatabaseManager:
                     market_snapshot_json TEXT
                 )
             """)
+
+            # Migration guard for Order_trade_crypto
+            cursor.execute("PRAGMA table_info(Order_trade_crypto)")
+            order_cols = [r[1] for r in cursor.fetchall()]
+            if "strategy_type" not in order_cols:
+                cursor.execute("ALTER TABLE Order_trade_crypto ADD COLUMN strategy_type TEXT DEFAULT 'SWING_4H'")
 
             # 2. TABLE Order_successed_crypto (Execution & Settlement Table)
             cursor.execute("""
@@ -87,7 +104,7 @@ class DatabaseManager:
                 )
             """)
 
-            # Table 4: Cashflow Logs (80% Funding Rate Arbitrage)
+            # Table 4: Cashflow Logs
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS cashflow_logs (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -111,21 +128,23 @@ class DatabaseManager:
 
             conn.commit()
 
-    def save_bot_state(self, bot_state: str, trading_mode: str, initial_capital: float, current_capital: float, leverage: int = 3):
+    def save_bot_state(self, bot_state: str, trading_mode: str, initial_capital: float, current_capital: float, leverage: int = 3, sideway_enabled: int = 0, sideway_state: str = "DISABLED"):
         """Save or update global bot configuration state."""
         with self.get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
-                INSERT INTO bot_state_config (id, bot_state, trading_mode, initial_capital, current_capital, leverage, last_updated)
-                VALUES (1, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                INSERT INTO bot_state_config (id, bot_state, trading_mode, sideway_mode_enabled, sideway_state, initial_capital, current_capital, leverage, last_updated)
+                VALUES (1, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
                 ON CONFLICT(id) DO UPDATE SET
                     bot_state = excluded.bot_state,
                     trading_mode = excluded.trading_mode,
+                    sideway_mode_enabled = excluded.sideway_mode_enabled,
+                    sideway_state = excluded.sideway_state,
                     initial_capital = excluded.initial_capital,
                     current_capital = excluded.current_capital,
                     leverage = excluded.leverage,
                     last_updated = CURRENT_TIMESTAMP
-            """, (bot_state, trading_mode, initial_capital, current_capital, leverage))
+            """, (bot_state, trading_mode, sideway_enabled, sideway_state, initial_capital, current_capital, leverage))
             conn.commit()
 
     def get_bot_state(self) -> Dict[str, Any]:
@@ -144,10 +163,10 @@ class DatabaseManager:
             snapshot_str = json.dumps(pos.get("market_snapshot", {}))
             cursor.execute("""
                 INSERT INTO Order_trade_crypto (
-                    id, symbol, side, timeframe, leverage, entry_price, qty, order_value,
+                    id, symbol, side, timeframe, strategy_type, leverage, entry_price, qty, order_value,
                     margin_required, initial_margin, sl_price, tp_price, tp1_target,
                     tp1_done, realized_pnl, state, entry_time, status, market_snapshot_json
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                     qty = excluded.qty,
                     margin_required = excluded.margin_required,
@@ -159,8 +178,8 @@ class DatabaseManager:
                     state = excluded.state,
                     status = excluded.status
             """, (
-                pos["id"], pos["symbol"], pos["side"], pos.get("timeframe", "4h"), pos.get("leverage", 3),
-                pos["entry_price"], pos["qty"], pos["order_value"], pos["margin_required"],
+                pos["id"], pos["symbol"], pos["side"], pos.get("timeframe", "4h"), pos.get("strategy_type", "SWING_4H"),
+                pos.get("leverage", 3), pos["entry_price"], pos["qty"], pos["order_value"], pos["margin_required"],
                 pos.get("initial_margin", pos["margin_required"]), pos["sl_price"],
                 pos.get("tp_price", pos.get("tp1_target", 0.0)), pos.get("tp1_target", 0.0),
                 1 if pos.get("tp1_done") else 0, pos.get("realized_pnl", 0.0),
@@ -224,6 +243,7 @@ class DatabaseManager:
                     t.side AS side,
                     s.type AS type,
                     t.timeframe AS timeframe,
+                    t.strategy_type AS strategy_type,
                     t.leverage AS leverage,
                     t.entry_price AS entry_price,
                     s.exit_price AS exit_price,

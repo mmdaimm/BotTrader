@@ -286,6 +286,11 @@ def update_tp1_target(symbol: str = Query(...), new_tp1: float = Query(...)):
         )
     return res
 
+@app.post("/api/toggle-sideway-mode")
+def toggle_sideway_mode(enabled: bool = Query(...)):
+    """Toggle 15m Sideway Range Engine ON/OFF with Graceful Disabling Handling."""
+    return bot.set_sideway_mode(enabled)
+
 @app.get("/api/export-data")
 def export_trading_data():
     """Export full trading state backup (active positions, trade history, cashflow logs)."""
