@@ -100,7 +100,44 @@ def read_root():
 @app.get("/api/status")
 def get_status():
     """Return real-time bot metrics, prices, indicators, active positions, and trade history."""
-    return bot.run_single_iteration()
+    bot.sync_live_exchange_positions()
+    res = bot.run_single_iteration()
+    # 100% Single Source of Truth: Sync active_positions strictly with OKX Live Positions API
+    if hasattr(bot, 'client') and bot.client:
+        okx_pos_res = bot.client.get_positions(instType="SWAP")
+        if okx_pos_res.get("code") == "0":
+            data_list = okx_pos_res.get("data", [])
+            live_okx_positions = []
+            for p in data_list:
+                p_size = float(p.get("pos", 0.0) or 0.0)
+                if p_size != 0:
+                    sym = p.get("instId", "")
+                    pos_side = str(p.get("posSide", "long")).upper()
+                    if pos_side == "NET":
+                        pos_side = "LONG" if p_size > 0 else "SHORT"
+                    entry_px = float(p.get("avgPx", 0.0) or 0.0)
+                    upl = float(p.get("upl", 0.0) or 0.0)
+                    upl_ratio = float(p.get("uplRatio", 0.0) or 0.0) * 100.0
+                    live_okx_positions.append({
+                        "id": f"OKX-{sym}-{pos_side}",
+                        "symbol": sym,
+                        "side": pos_side,
+                        "timeframe": "4h",
+                        "strategy_type": "SWING_4H",
+                        "leverage": int(float(p.get("lever", 3) or 3)),
+                        "entry_price": entry_px,
+                        "qty": abs(p_size),
+                        "order_value": round(abs(p_size) * entry_px, 2),
+                        "margin_required": float(p.get("margin", 100.0) or 100.0),
+                        "unrealized_pnl": round(upl, 2),
+                        "pnl_pct": round(upl_ratio, 2),
+                        "sl_price": float(p.get("slTriggerPx", 0.0) or 0.0),
+                        "tp_price": float(p.get("tpTriggerPx", 0.0) or 0.0),
+                        "tp1_target": float(p.get("tpTriggerPx", 0.0) or 0.0),
+                        "status": "OPEN"
+                    })
+            res["active_positions"] = live_okx_positions
+    return res
 
 @app.get("/api/candles")
 def get_candles_data(symbol: str = Query("BTC-USDT-SWAP"), resolution: str = Query("15")):
