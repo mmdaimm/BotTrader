@@ -168,6 +168,7 @@ class PaperTradingEngine:
                 "symbol": "ADA-USDT-SWAP",
                 "side": "SHORT",
                 "timeframe": "4h",
+                "strategy_type": "SWING_4H",
                 "leverage": 3,
                 "entry_price": 0.163,
                 "qty": 1533.74,
@@ -179,6 +180,25 @@ class PaperTradingEngine:
                 "tp1_target": 0.158,
                 "tp1_done": False,
                 "entry_time": "2026-07-24 06:40:00",
+                "status": "OPEN"
+            },
+            "AVAX-USDT-SWAP": {
+                "id": "PAPER-1784990000-AVAX-USDT-SWAP-LONG",
+                "symbol": "AVAX-USDT-SWAP",
+                "side": "LONG",
+                "timeframe": "4h",
+                "strategy_type": "SWING_4H",
+                "leverage": 3,
+                "entry_price": 6.715,
+                "qty": 250.0,
+                "order_value": 1678.75,
+                "margin_required": 559.58,
+                "initial_margin": 559.58,
+                "sl_price": 6.596,
+                "tp_price": 6.882,
+                "tp1_target": 6.882,
+                "tp1_done": False,
+                "entry_time": "2026-07-26 13:00:00",
                 "status": "OPEN"
             }
         }
