@@ -346,10 +346,13 @@ class OKXClient:
                                 "raw_response": d
                             }
                         else:
+                            s_msg = info.get("sMsg", "Order failed")
+                            if s_code == "51010":
+                                s_msg = "โปรดเปลี่ยนโหมดบัญชี OKX Demo เป็น 'Single-currency Margin' (⚙️ Settings -> Account Mode) เพื่อเปิดสิทธิ์เทรด Futures"
                             return {
                                 "status": "API_ERROR",
                                 "code": s_code,
-                                "message": info.get("sMsg", "Order failed"),
+                                "message": s_msg,
                                 "raw_response": d
                             }
                     return {
