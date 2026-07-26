@@ -72,6 +72,10 @@ class OKXClient:
                     return str(val).strip()
             return ""
 
+        if not self.api_key or not self.api_secret or not self.passphrase:
+            okx_envs = {k: f"len={len(v)}" for k, v in os.environ.items() if "OKX" in k.upper() or "DEMO" in k.upper() or "ACCESS" in k.upper()}
+            print(f"[OKXClient] Runtime key audit - envs_found: {okx_envs}")
+
         if self.simulated:
             if not self.api_key:
                 self.api_key = _get_non_empty(["OKX_DEMO_API_KEY", "OKX_ACCESS_KEY", "OKX_API_KEY", "OKX_KEY"])
@@ -86,6 +90,11 @@ class OKXClient:
                 self.api_secret = _get_non_empty(["OKX_LIVE_SECRET_KEY", "OKX_ACCESS_SECRET", "OKX_SECRET_KEY", "OKX_API_SECRET", "OKX_SECRET"])
             if not self.passphrase:
                 self.passphrase = _get_non_empty(["OKX_LIVE_PASSPHRASE", "OKX_ACCESS_PASSPHRASE", "OKX_PASSPHRASE"])
+
+        if self.api_key and self.api_secret and self.passphrase:
+            print(f"[OKXClient] Key resolved! API Key len: {len(self.api_key)}, Secret len: {len(self.api_secret)}, Passphrase len: {len(self.passphrase)}")
+        else:
+            print(f"[OKXClient] WARNING: OKX API Key is STILL MISSING! (Key len={len(self.api_key)}, Secret len={len(self.api_secret)}, Passphrase len={len(self.passphrase)})")
 
     def _generate_signature(self, timestamp: str, method: str, request_path: str, body: str = "") -> str:
         """Generate OKX API v5 Base64 HMAC-SHA256 signature."""
@@ -198,10 +207,12 @@ class OKXClient:
         """Fetch OKX Demo / Live Account Balance & Margin Health."""
         self._resolve_keys()
         if not self.api_key or not self.api_secret or not self.passphrase:
+            msg = f"OKX Demo API Key missing in Railway Variables (Key len={len(self.api_key)}, Secret len={len(self.api_secret)}, Passphrase len={len(self.passphrase)})"
+            print(f"[OKXClient] {msg}")
             return {
                 "status": "UNCONFIGURED_KEY",
                 "simulated": self.simulated,
-                "message": "OKX Demo API Key is missing in Railway Variables",
+                "message": msg,
                 "total_equity": None,
                 "available_margin": None,
                 "margin_ratio": 0.0
