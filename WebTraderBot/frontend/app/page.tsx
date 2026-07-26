@@ -1043,6 +1043,7 @@ export default function Dashboard() {
                   const isProfit = pnl >= 0;
 
                   return (
+                    <tr key={pos.id} style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.05)' }}>
                       <td style={{ padding: '6px 0', fontWeight: 'bold' }}>
                         {pos.symbol.split('-')[0]}
                         {pos.okx_order_id && (
