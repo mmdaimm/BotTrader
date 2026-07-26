@@ -820,7 +820,7 @@ export default function Dashboard() {
           <CandlestickChart candles={candles} symbol={chartSymbol} resolution={chartResolution} />
         </div>
 
-        {/* Right Box: Terminal Feed Log */}
+        {/* Right Box: OKX Live Orderbook Depth Ladder */}
         <div style={{
           background: 'rgba(18, 24, 38, 0.75)',
           backdropFilter: 'blur(12px)',
@@ -833,7 +833,7 @@ export default function Dashboard() {
         }}>
           <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-              <span style={{ fontWeight: '700', fontSize: '14px' }}>📡 Terminal Feed Log</span>
+              <span style={{ fontWeight: '700', fontSize: '14px', color: '#60a5fa' }}>📖 OKX Orderbook Depth</span>
               <button onClick={() => { fetchStatus(); fetchCandles(); }} style={{
                 background: 'transparent',
                 border: '1px solid rgba(255, 255, 255, 0.1)',
@@ -847,17 +847,21 @@ export default function Dashboard() {
               </button>
             </div>
 
+            <div style={{ fontSize: '12px', fontWeight: '700', color: '#ffffff', marginBottom: '12px' }}>
+              Selected Asset: <span style={{ color: '#00f090' }}>{chartSymbol}</span>
+            </div>
+
             {/* OKX Live Orderbook Depth Ladder */}
-            <div style={{ marginBottom: '16px', background: 'rgba(11, 15, 25, 0.6)', padding: '10px', borderRadius: '10px', border: '1px solid rgba(255, 255, 255, 0.05)' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', fontWeight: '700', marginBottom: '8px', color: '#60a5fa' }}>
-                <span>📖 OKX Orderbook Depth ({chartSymbol.split('-')[0]})</span>
-                <span style={{ color: '#9ca3af', fontSize: '10px' }}>OKX Demo API</span>
+            <div style={{ background: 'rgba(11, 15, 25, 0.8)', padding: '14px', borderRadius: '12px', border: '1px solid rgba(255, 255, 255, 0.05)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', fontWeight: '700', marginBottom: '10px', color: '#9ca3af', borderBottom: '1px solid rgba(255, 255, 255, 0.08)', paddingBottom: '6px' }}>
+                <span>Order Price (USDT)</span>
+                <span>Contracts (sz)</span>
               </div>
               
               {/* Asks (Sells) */}
-              <div style={{ fontSize: '10px', fontFamily: 'monospace' }}>
-                {(orderbook.asks || []).slice(0, 3).reverse().map((ask, idx) => (
-                  <div key={`ask-${idx}`} style={{ display: 'flex', justifyContent: 'space-between', padding: '1px 0', color: '#ff3b69' }}>
+              <div style={{ fontSize: '11px', fontFamily: 'monospace', marginBottom: '6px' }}>
+                {(orderbook.asks || []).slice(0, 6).reverse().map((ask, idx) => (
+                  <div key={`ask-${idx}`} style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0', color: '#ff3b69' }}>
                     <span>Ask ${ask[0]?.toLocaleString()}</span>
                     <span>{ask[1]?.toLocaleString()} sz</span>
                   </div>
@@ -865,85 +869,19 @@ export default function Dashboard() {
               </div>
 
               {/* Spread / Current Price */}
-              <div style={{ textAlign: 'center', padding: '4px 0', color: '#10b981', fontWeight: '700', fontSize: '11px', borderTop: '1px dashed rgba(255, 255, 255, 0.1)', borderBottom: '1px dashed rgba(255, 255, 255, 0.1)', margin: '4px 0' }}>
-                ⚡ ${pairs[chartSymbol]?.last_price ? pairs[chartSymbol].last_price.toLocaleString() : '---'} USD (Live OKX Price)
+              <div style={{ textAlign: 'center', padding: '8px 0', color: '#10b981', fontWeight: '700', fontSize: '13px', borderTop: '1px dashed rgba(255, 255, 255, 0.15)', borderBottom: '1px dashed rgba(255, 255, 255, 0.15)', margin: '6px 0', background: 'rgba(16, 185, 129, 0.05)', borderRadius: '6px' }}>
+                ⚡ ${pairs[chartSymbol]?.last_price ? pairs[chartSymbol].last_price.toLocaleString() : '---'} USD
               </div>
 
               {/* Bids (Buys) */}
-              <div style={{ fontSize: '10px', fontFamily: 'monospace' }}>
-                {(orderbook.bids || []).slice(0, 3).map((bid, idx) => (
-                  <div key={`bid-${idx}`} style={{ display: 'flex', justifyContent: 'space-between', padding: '1px 0', color: '#00f090' }}>
+              <div style={{ fontSize: '11px', fontFamily: 'monospace', marginTop: '6px' }}>
+                {(orderbook.bids || []).slice(0, 6).map((bid, idx) => (
+                  <div key={`bid-${idx}`} style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0', color: '#00f090' }}>
                     <span>Bid ${bid[0]?.toLocaleString()}</span>
                     <span>{bid[1]?.toLocaleString()} sz</span>
                   </div>
                 ))}
               </div>
-            </div>
-
-            <div style={{ display: 'flex', gap: '4px', alignItems: 'center', flexWrap: 'wrap', marginBottom: '12px' }}>
-              <span style={{ fontSize: '10px', color: '#9ca3af', marginRight: '2px' }}>Log Coins:</span>
-              <button onClick={() => setSelectedLogCoins(VETERAN_COINS.map(c => c.tag))} style={{
-                background: 'rgba(59, 130, 246, 0.2)',
-                border: '1px solid #3b82f6',
-                color: '#3b82f6',
-                borderRadius: '4px',
-                padding: '2px 5px',
-                fontSize: '9px',
-                fontWeight: '700',
-                cursor: 'pointer'
-              }}>
-                All 15
-              </button>
-              <button onClick={() => setSelectedLogCoins(['BTC', 'ETH', 'SOL', 'DOGE', 'LINK'])} style={{
-                background: 'rgba(0, 240, 144, 0.2)',
-                border: '1px solid #00f090',
-                color: '#00f090',
-                borderRadius: '4px',
-                padding: '2px 5px',
-                fontSize: '9px',
-                fontWeight: '700',
-                cursor: 'pointer'
-              }}>
-                Top 5
-              </button>
-              {VETERAN_COINS.map((coin) => {
-                const isChecked = selectedLogCoins.includes(coin.tag);
-                return (
-                  <button
-                    key={coin.tag}
-                    onClick={() => toggleLogCoin(coin.tag)}
-                    style={{
-                      background: isChecked ? '#3b82f6' : 'rgba(255, 255, 255, 0.05)',
-                      color: isChecked ? '#ffffff' : '#6b7280',
-                      border: '1px solid rgba(255, 255, 255, 0.1)',
-                      borderRadius: '4px',
-                      padding: '2px 4px',
-                      fontSize: '9px',
-                      fontWeight: '700',
-                      cursor: 'pointer'
-                    }}
-                  >
-                    {isChecked ? `✓ ${coin.tag}` : coin.tag}
-                  </button>
-                );
-              })}
-            </div>
-
-            <div style={{
-              background: '#06080d',
-              border: '1px solid rgba(255, 255, 255, 0.05)',
-              borderRadius: '12px',
-              padding: '14px',
-              fontFamily: 'monospace',
-              fontSize: '11px',
-              color: '#a7f3d0',
-              height: '410px',
-              overflowY: 'auto',
-              lineHeight: '1.6'
-            }}>
-              {logs.map((log, idx) => (
-                <div key={idx} style={{ marginBottom: '4px', wordBreak: 'break-all' }}>{log}</div>
-              ))}
             </div>
           </div>
         </div>
