@@ -142,66 +142,21 @@ class PaperTradingEngine:
             self._seed_default_positions()
 
     def _seed_default_positions(self):
-        """Seed initial active positions (ETH, BTC 50% BE, ADA) & trade history if server starts fresh on container deploy."""
-        now_struct = time.localtime()
-        self.active_positions = {
-            "ETH-USDT-SWAP": {
-                "id": "PAPER-1784835248-ETH-USDT-SWAP-SHORT",
-                "symbol": "ETH-USDT-SWAP",
-                "side": "SHORT",
-                "timeframe": "4h",
-                "leverage": 3,
-                "entry_price": 1881.52,
-                "qty": 2.6574,
-                "order_value": 5000.0,
-                "margin_required": 1666.67,
-                "initial_margin": 1666.67,
-                "sl_price": 1937.9656,
-                "tp_price": 1825.074,
-                "tp1_target": 1825.074,
-                "tp1_done": False,
-                "entry_time": "2026-07-24 02:34:08",
-                "status": "OPEN"
-            },
-            "ADA-USDT-SWAP": {
-                "id": "PAPER-1784850000-ADA-USDT-SWAP-SHORT",
-                "symbol": "ADA-USDT-SWAP",
-                "side": "SHORT",
-                "timeframe": "4h",
-                "strategy_type": "SWING_4H",
-                "leverage": 3,
-                "entry_price": 0.163,
-                "qty": 1533.74,
-                "order_value": 250.0,
-                "margin_required": 83.33,
-                "initial_margin": 83.33,
-                "sl_price": 0.168,
-                "tp_price": 0.158,
-                "tp1_target": 0.158,
-                "tp1_done": False,
-                "entry_time": "2026-07-24 06:40:00",
-                "status": "OPEN"
-            },
-            "AVAX-USDT-SWAP": {
-                "id": "PAPER-1784990000-AVAX-USDT-SWAP-LONG",
-                "symbol": "AVAX-USDT-SWAP",
-                "side": "LONG",
-                "timeframe": "4h",
-                "strategy_type": "SWING_4H",
-                "leverage": 3,
-                "entry_price": 6.715,
-                "qty": 250.0,
-                "order_value": 1678.75,
-                "margin_required": 559.58,
-                "initial_margin": 559.58,
-                "sl_price": 6.596,
-                "tp_price": 6.882,
-                "tp1_target": 6.882,
-                "tp1_done": False,
-                "entry_time": "2026-07-26 13:00:00",
-                "status": "OPEN"
-            }
-        }
+        """
+        Dynamic State Restoration:
+        Loads active open positions directly from SQLite Order_trade_crypto table (SSOT).
+        Eliminates static hardcoded position dictionaries to prevent state drift or overwrites.
+        """
+        try:
+            db_positions = self.db.load_open_positions()
+            if db_positions:
+                self.active_positions = db_positions
+                print(f"[PaperTradingEngine] Dynamic DB Seed: Loaded {len(self.active_positions)} active positions from SQLite")
+            else:
+                self.active_positions = {}
+                print("[PaperTradingEngine] Dynamic DB Seed: No active open positions in SQLite")
+        except Exception as e:
+            print(f"[PaperTradingEngine] Dynamic seed error: {e}")
         if not self.trade_history:
             self.trade_history = [
                 {
