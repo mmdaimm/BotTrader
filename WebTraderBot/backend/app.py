@@ -115,10 +115,16 @@ def get_status():
                         algo_map[a_sym] = {"sl_price": 0.0, "tp_price": 0.0}
                     sl_t = float(a.get("slTriggerPx", 0.0) or 0.0)
                     tp_t = float(a.get("tpTriggerPx", 0.0) or 0.0)
+                    trig_t = float(a.get("triggerPx", 0.0) or 0.0)
                     if sl_t > 0:
                         algo_map[a_sym]["sl_price"] = sl_t
                     if tp_t > 0:
                         algo_map[a_sym]["tp_price"] = tp_t
+                    if trig_t > 0:
+                        if sl_t <= 0 and (a.get("slTriggerPx") is not None or "sl" in str(a.get("algoClOrdId", "")).lower()):
+                            algo_map[a_sym]["sl_price"] = trig_t
+                        elif tp_t <= 0 and (a.get("tpTriggerPx") is not None or "tp" in str(a.get("algoClOrdId", "")).lower()):
+                            algo_map[a_sym]["tp_price"] = trig_t
 
         okx_pos_res = bot.client.get_positions(instType="SWAP")
         if okx_pos_res.get("code") == "0":

@@ -469,13 +469,17 @@ class OKXClient:
         if not self.api_key or not self.api_secret or not self.passphrase:
             return {"code": "-1", "msg": "Unconfigured OKX API Key", "data": []}
 
-        try:
-            path = f"/api/v5/trade/orders-algo-pending?instType={instType}&ordType=conditional,oco,trigger"
-            url = f"{self.host}{path}"
-            headers = self._get_headers("GET", path)
-            req = urllib.request.Request(url, headers=headers)
-            with urllib.request.urlopen(req, timeout=5) as resp:
-                return json.loads(resp.read().decode())
-        except Exception as e:
-            print(f"[OKXClient] Get pending algo orders exception: {e}")
-            return {"code": "-1", "msg": str(e), "data": []}
+        all_algos = []
+        for o_type in ["conditional", "oco", "trigger"]:
+            try:
+                path = f"/api/v5/trade/orders-algo-pending?instType={instType}&ordType={o_type}"
+                url = f"{self.host}{path}"
+                headers = self._get_headers("GET", path)
+                req = urllib.request.Request(url, headers=headers)
+                with urllib.request.urlopen(req, timeout=4) as resp:
+                    d = json.loads(resp.read().decode())
+                    if d.get("code") == "0" and d.get("data"):
+                        all_algos.extend(d.get("data", []))
+            except Exception as e:
+                print(f"[OKXClient] Error fetching algo orders ({o_type}): {e}")
+        return {"code": "0", "msg": "SUCCESS", "data": all_algos}
