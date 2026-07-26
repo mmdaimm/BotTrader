@@ -277,22 +277,32 @@ class TraderBot:
         return {"symbol": symbol, "signal": "NONE", "reason": "No Sideway reversal setup"}
 
     def set_sideway_mode(self, enabled: bool) -> dict:
-        """Toggle Sideway Mode ON or OFF with Graceful Disabling Handling."""
+        """Toggle Sideway Mode ON or OFF with Graceful Disabling Handling & Telegram Notification."""
         self.sideway_mode_enabled = enabled
         if enabled:
             self.sideway_state = "ACTIVE"
+            msg = "🟢 <b>[SIDEWAY MODE ENABLED]</b>\nState: ACTIVE\n15m Sideway Range Engine is now active and scanning 15m candles concurrently with 4H Swing."
         else:
             # Check if there are active open Sideway positions
             active_sd = [p for p in self.paper_engine.active_positions.values() if p.get("strategy_type") == "SIDEWAY_15M"]
             if active_sd:
                 self.sideway_state = "STOPPING"
+                msg = f"🟡 <b>[SIDEWAY MODE DISABLING]</b>\nState: STOPPING\nNo new Sideway entries. Gracefully managing {len(active_sd)} active Sideway positions to TP/SL exit."
             else:
                 self.sideway_state = "DISABLED"
+                msg = "⚪ <b>[SIDEWAY MODE DISABLED]</b>\nState: DISABLED\n15m Sideway Range Engine is completely stopped."
 
         self.db.save_bot_state(
             self.bot_state, self.trading_mode, self.initial_capital, self.paper_engine.current_capital,
             self.paper_engine.leverage, 1 if enabled else 0, self.sideway_state
         )
+        
+        # Send instant Telegram Alert on Web Dashboard or API Toggle
+        try:
+            self.notifier.send_message(msg)
+        except Exception as e:
+            print(f"[TraderBot] Telegram alert error: {e}")
+
         return {
             "status": "SUCCESS",
             "sideway_mode_enabled": self.sideway_mode_enabled,
