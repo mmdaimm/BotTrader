@@ -26,7 +26,7 @@ from scripts.backtest_engine import run_backtest_process
 app = FastAPI(
     title="WebTraderBot FastAPI Engine (OKX 15-Veteran Futures Portfolio)",
     description="Multi-Crypto Perpetual Futures Engine for Next.js Dashboard",
-    version="5.0.0"
+    version="5.1.0-OKX-DEMO"
 )
 
 # Enable CORS for Next.js frontend (Vercel & Localhost)
