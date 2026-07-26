@@ -128,7 +128,7 @@ interface BacktestResult {
   friction_deductions?: string;
 }
 
-const DEFAULT_BACKEND = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
+const DEFAULT_BACKEND = process.env.NEXT_PUBLIC_BACKEND_URL || 'https://bottrader-production.up.railway.app';
 
 const VETERAN_COINS = [
   { sym: 'BTC-USDT-SWAP', label: 'BTC Perpetual', tag: 'BTC', est: '2009' },
