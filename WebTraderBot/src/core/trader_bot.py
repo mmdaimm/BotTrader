@@ -419,11 +419,12 @@ class TraderBot:
         except Exception as e:
             print(f"[TraderBot] Error updating paper positions: {e}")
 
-        # Check Graceful Disabling State Update:
+        # Check Graceful Disabling State Auto-Transition:
         if self.sideway_state == "STOPPING":
             active_sd = [p for p in self.paper_engine.active_positions.values() if p.get("strategy_type") == "SIDEWAY_15M"]
             if not active_sd:
                 self.sideway_state = "DISABLED"
+                self.sideway_mode_enabled = False
                 self.db.save_bot_state(
                     self.bot_state, self.trading_mode, self.initial_capital, self.paper_engine.current_capital,
                     self.paper_engine.leverage, 0, "DISABLED"
@@ -445,6 +446,7 @@ class TraderBot:
             "trading_mode": self.trading_mode,
             "sideway_mode_enabled": self.sideway_mode_enabled,
             "sideway_state": self.sideway_state,
+            "scan_interval_sec": self.get_scan_interval_sec(),
             "active_symbols": self.symbols,
             "timeframe": self.timeframe_str,
             "last_price": btc_price,
@@ -465,3 +467,9 @@ class TraderBot:
             "active_positions": list(self.paper_engine.active_positions.values()),
             "trade_history": self.paper_engine.trade_history[:10]
         }
+
+    def get_scan_interval_sec(self) -> int:
+        """Return 900s (15m) when Sideway Mode is active/stopping, otherwise 1800s (30m)."""
+        if self.sideway_mode_enabled or self.sideway_state in ["ACTIVE", "STOPPING"]:
+            return 900
+        return 1800
