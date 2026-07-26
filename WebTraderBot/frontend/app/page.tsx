@@ -852,17 +852,17 @@ export default function Dashboard() {
             </div>
 
             {/* OKX Account Balance & Equity Gauge Card */}
-            <div style={{ marginBottom: '16px', background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.1), rgba(59, 130, 246, 0.1))', padding: '14px', borderRadius: '12px', border: '1px solid rgba(16, 185, 129, 0.3)' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', fontWeight: '700', color: '#10b981', marginBottom: '8px' }}>
+            <div style={{ marginBottom: '16px', background: okxBalance.status === 'SUCCESS' ? 'linear-gradient(135deg, rgba(16, 185, 129, 0.15), rgba(59, 130, 246, 0.15))' : 'rgba(18, 24, 38, 0.75)', padding: '14px', borderRadius: '12px', border: okxBalance.status === 'SUCCESS' ? '1px solid #10b981' : '1px solid rgba(245, 158, 11, 0.4)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', fontWeight: '700', color: okxBalance.status === 'SUCCESS' ? '#10b981' : '#f59e0b', marginBottom: '8px' }}>
                 <span>💳 OKX Account Balance (Demo USDT)</span>
-                <span>{okxBalance.simulated ? '🟡 OKX DEMO' : '🟢 LIVE'}</span>
+                <span>{okxBalance.status === 'SUCCESS' ? '🟢 OKX DEMO SYNCED' : '⚠️ UNLINKED (FALLBACK)'}</span>
               </div>
               <div style={{ fontSize: '20px', fontWeight: '800', color: '#ffffff', fontFamily: 'monospace', marginBottom: '4px' }}>
-                ${(okxBalance.total_equity || data?.paper_summary?.current_capital || 10000.0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} <span style={{ fontSize: '11px', color: '#10b981' }}>USD</span>
+                ${(okxBalance.total_equity ?? data?.paper_summary?.current_capital ?? 10000.0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} <span style={{ fontSize: '11px', color: '#10b981' }}>USD</span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: '#9ca3af' }}>
-                <span>Available Margin: <strong style={{ color: '#60a5fa' }}>${(okxBalance.available_margin || data?.paper_summary?.available_capital || 9665.97).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong></span>
-                <span>Margin Health: <strong style={{ color: '#00f090' }}>Safe (Cross 3x)</strong></span>
+                <span>Available Margin: <strong style={{ color: '#60a5fa' }}>${(okxBalance.available_margin ?? data?.paper_summary?.available_capital ?? 9665.97).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong></span>
+                <span>API Connection: <strong style={{ color: okxBalance.status === 'SUCCESS' ? '#00f090' : '#f59e0b' }}>{okxBalance.status === 'SUCCESS' ? 'Live OKX Demo Account' : (okxBalance.message || 'Key Required')}</strong></span>
               </div>
             </div>
 

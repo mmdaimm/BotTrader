@@ -164,15 +164,26 @@ class OKXClient:
 
     def get_account_balance(self) -> dict:
         """Fetch OKX Demo / Live Account Balance & Margin Health."""
+        if not self.api_key or not self.api_secret or not self.passphrase:
+            return {
+                "status": "UNCONFIGURED_KEY",
+                "simulated": self.simulated,
+                "message": "OKX Demo API Key is missing in Railway Variables",
+                "total_equity": None,
+                "available_margin": None,
+                "margin_ratio": 0.0
+            }
+
         try:
             path = "/api/v5/account/balance"
             url = f"{self.host}{path}"
-            req = urllib.request.Request(url, headers=self._get_headers("GET", path))
-            with urllib.request.urlopen(req, timeout=4) as resp:
+            headers = self._get_headers("GET", path)
+            req = urllib.request.Request(url, headers=headers)
+            with urllib.request.urlopen(req, timeout=5) as resp:
                 data = json.loads(resp.read().decode())
                 if data.get("code") == "0" and data.get("data"):
                     bal = data["data"][0]
-                    total_eq = float(bal.get("totalEq", 10000.0))
+                    total_eq = float(bal.get("totalEq", 0.0))
                     iso_eq = float(bal.get("isoEq", 0.0))
                     adj_eq = float(bal.get("adjEq", total_eq))
                     ord_froz = float(bal.get("ordFroz", 0.0))
@@ -191,14 +202,22 @@ class OKXClient:
                         "available_margin": usdt_avail,
                         "margin_ratio": mgn_ratio,
                         "iso_equity": iso_eq,
-                        "frozen_order_val": ord_froz
+                        "frozen_order_val": ord_froz,
+                        "currency_details": details
+                    }
+                else:
+                    return {
+                        "status": "API_ERROR",
+                        "simulated": self.simulated,
+                        "code": data.get("code"),
+                        "message": data.get("msg", "OKX API error"),
+                        "total_equity": None
                     }
         except Exception as e:
             print(f"[OKXClient] Balance fetch exception: {e}")
-        return {
-            "status": "OFFLINE",
-            "simulated": self.simulated,
-            "total_equity": 10000.0,
-            "available_margin": 10000.0,
-            "margin_ratio": 0.0
-        }
+            return {
+                "status": "FETCH_ERROR",
+                "simulated": self.simulated,
+                "message": str(e),
+                "total_equity": None
+            }
