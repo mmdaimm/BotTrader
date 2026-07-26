@@ -210,6 +210,30 @@ class OKXClient:
             print(f"[OKXClient] Orderbook fetch exception: {e}")
         return {"status": "ERROR", "bids": [], "asks": [], "symbol": symbol}
 
+    def get_funding_rate(self, symbol: str = "BTC-USDT-SWAP") -> dict:
+        """Fetch real-time OKX Funding Rate (GET /api/v5/public/funding-rate)."""
+        try:
+            url = f"{self.host}/api/v5/public/funding-rate?instId={symbol}"
+            req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+            with urllib.request.urlopen(req, timeout=3) as resp:
+                data = json.loads(resp.read().decode())
+                if data.get("code") == "0" and data.get("data"):
+                    item = data["data"][0]
+                    fr = float(item.get("fundingRate", 0.0001))
+                    next_fr = float(item.get("nextFundingRate", fr))
+                    annual_apy = fr * 3 * 365 * 100.0
+                    return {
+                        "status": "SUCCESS",
+                        "symbol": symbol,
+                        "funding_rate": fr,
+                        "next_funding_rate": next_fr,
+                        "annual_apy_pct": round(annual_apy, 2),
+                        "funding_time": item.get("fundingTime")
+                    }
+        except Exception as e:
+            print(f"[OKXClient] Funding rate fetch exception for {symbol}: {e}")
+        return {"status": "ERROR", "symbol": symbol, "funding_rate": 0.0001, "annual_apy_pct": 10.95}
+
     def get_account_balance(self) -> dict:
         """Fetch OKX Demo / Live Account Balance & Margin Health."""
         self._resolve_keys()
