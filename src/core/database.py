@@ -106,13 +106,6 @@ class DatabaseManager:
                 )
             """)
 
-            # B-Tree Query Performance Indexing Optimization
-            cursor.execute("CREATE INDEX IF NOT EXISTS idx_order_status ON Order_trade_crypto(status)")
-            cursor.execute("CREATE INDEX IF NOT EXISTS idx_order_symbol ON Order_trade_crypto(symbol)")
-            cursor.execute("CREATE INDEX IF NOT EXISTS idx_order_strategy ON Order_trade_crypto(strategy_type)")
-            cursor.execute("CREATE INDEX IF NOT EXISTS idx_success_idorder ON Order_successed_crypto(id_order)")
-            cursor.execute("CREATE INDEX IF NOT EXISTS idx_audit_type ON system_audit_logs(event_type)")
-
             # Clean up old legacy tables if they exist
             cursor.execute("DROP TABLE IF EXISTS active_positions")
             cursor.execute("DROP TABLE IF EXISTS trade_history")
@@ -138,6 +131,13 @@ class DatabaseManager:
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """)
+
+            # B-Tree Query Performance Indexing Optimization (Must be after tables exist)
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_order_status ON Order_trade_crypto(status)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_order_symbol ON Order_trade_crypto(symbol)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_order_strategy ON Order_trade_crypto(strategy_type)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_success_idorder ON Order_successed_crypto(id_order)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_audit_type ON system_audit_logs(event_type)")
 
             conn.commit()
 
