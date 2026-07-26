@@ -116,8 +116,15 @@ class OKXClient:
             'x-simulated-trading': '1' if self.simulated else '0'
         }
         if self.api_key and self.api_secret and self.passphrase:
+            sig = self._generate_signature(timestamp, method, request_path, body)
+            # Standard OKX V5 API Header Keys
+            headers['OK-ACCESS-KEY'] = self.api_key
+            headers['OK-ACCESS-SIGN'] = sig
+            headers['OK-ACCESS-TIMESTAMP'] = timestamp
+            headers['OK-ACCESS-PASSPHRASE'] = self.passphrase
+            # Fallback OKX- Variant Header Keys
             headers['OKX-ACCESS-KEY'] = self.api_key
-            headers['OKX-ACCESS-SIGN'] = self._generate_signature(timestamp, method, request_path, body)
+            headers['OKX-ACCESS-SIGN'] = sig
             headers['OKX-ACCESS-TIMESTAMP'] = timestamp
             headers['OKX-ACCESS-PASSPHRASE'] = self.passphrase
         return headers
