@@ -58,7 +58,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 15 Battle-Tested Veteran Crypto Instruments (> 5 Years Old)
+# 20 Battle-Tested Veteran Crypto Instruments (> 5 Years Old)
 VETERAN_SYMBOLS = [
     "BTC-USDT-SWAP",  # Bitcoin (2009)
     "ETH-USDT-SWAP",  # Ethereum (2015)
@@ -74,7 +74,12 @@ VETERAN_SYMBOLS = [
     "ETC-USDT-SWAP",  # Ethereum Classic (2016)
     "XLM-USDT-SWAP",  # Stellar (2014)
     "TRX-USDT-SWAP",  # Tron (2017)
-    "AVAX-USDT-SWAP"  # Avalanche (September 2020)
+    "AVAX-USDT-SWAP", # Avalanche (September 2020)
+    "BNB-USDT-SWAP",  # BNB / Binance Coin (July 2017)
+    "NEAR-USDT-SWAP", # NEAR Protocol (April 2020)
+    "UNI-USDT-SWAP",  # Uniswap (September 2020)
+    "FIL-USDT-SWAP",  # Filecoin (October 2020)
+    "ALGO-USDT-SWAP"  # Algorand (June 2019)
 ]
 
 bot = TraderBot(

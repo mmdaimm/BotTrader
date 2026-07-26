@@ -146,6 +146,11 @@ const VETERAN_COINS = [
   { sym: 'XLM-USDT-SWAP', label: 'XLM Perpetual', tag: 'XLM', est: '2014' },
   { sym: 'TRX-USDT-SWAP', label: 'TRX Perpetual', tag: 'TRX', est: '2017' },
   { sym: 'AVAX-USDT-SWAP', label: 'AVAX Perpetual', tag: 'AVAX', est: '2020' },
+  { sym: 'BNB-USDT-SWAP', label: 'BNB Perpetual', tag: 'BNB', est: '2017' },
+  { sym: 'NEAR-USDT-SWAP', label: 'NEAR Perpetual', tag: 'NEAR', est: '2020' },
+  { sym: 'UNI-USDT-SWAP', label: 'UNI Perpetual', tag: 'UNI', est: '2020' },
+  { sym: 'FIL-USDT-SWAP', label: 'FIL Perpetual', tag: 'FIL', est: '2020' },
+  { sym: 'ALGO-USDT-SWAP', label: 'ALGO Perpetual', tag: 'ALGO', est: '2019' }
 ];
 
 export default function Dashboard() {

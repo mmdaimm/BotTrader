@@ -36,12 +36,17 @@ CONTRACT_SIZES = {
     "DOGE-USDT-SWAP": 100.0,
     "DOT-USDT-SWAP": 1.0,
     "LINK-USDT-SWAP": 1.0,
+    "BCH-USDT-SWAP": 0.1,
+    "LTC-USDT-SWAP": 1.0,
+    "ATOM-USDT-SWAP": 1.0,
+    "ETC-USDT-SWAP": 1.0,
+    "XLM-USDT-SWAP": 10.0,
+    "TRX-USDT-SWAP": 100.0,
     "BNB-USDT-SWAP": 0.1,
     "NEAR-USDT-SWAP": 1.0,
-    "SUI-USDT-SWAP": 1.0,
-    "APT-USDT-SWAP": 1.0,
-    "OP-USDT-SWAP": 1.0,
-    "ARB-USDT-SWAP": 1.0
+    "UNI-USDT-SWAP": 1.0,
+    "FIL-USDT-SWAP": 1.0,
+    "ALGO-USDT-SWAP": 10.0
 }
 
 class OKXClient:
