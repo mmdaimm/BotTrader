@@ -104,6 +104,22 @@ def get_status():
     res = bot.run_single_iteration()
     # 100% Single Source of Truth: Sync active_positions strictly with OKX Live Positions API
     if hasattr(bot, 'client') and bot.client:
+        # Fetch pending algo orders to resolve attached SL/TP trigger prices
+        algo_map = {}
+        if hasattr(bot.client, 'get_pending_algo_orders'):
+            algo_res = bot.client.get_pending_algo_orders(instType="SWAP")
+            if algo_res.get("code") == "0":
+                for a in algo_res.get("data", []):
+                    a_sym = a.get("instId", "")
+                    if a_sym not in algo_map:
+                        algo_map[a_sym] = {"sl_price": 0.0, "tp_price": 0.0}
+                    sl_t = float(a.get("slTriggerPx", 0.0) or 0.0)
+                    tp_t = float(a.get("tpTriggerPx", 0.0) or 0.0)
+                    if sl_t > 0:
+                        algo_map[a_sym]["sl_price"] = sl_t
+                    if tp_t > 0:
+                        algo_map[a_sym]["tp_price"] = tp_t
+
         okx_pos_res = bot.client.get_positions(instType="SWAP")
         if okx_pos_res.get("code") == "0":
             data_list = okx_pos_res.get("data", [])
@@ -117,7 +133,24 @@ def get_status():
                         pos_side = "LONG" if p_size > 0 else "SHORT"
                     entry_px = float(p.get("avgPx", 0.0) or 0.0)
                     upl = float(p.get("upl", 0.0) or 0.0)
-                    upl_ratio = float(p.get("uplRatio", 0.0) or 0.0) * 100.0
+                    order_val = round(abs(p_size) * entry_px, 2)
+                    
+                    # Floating PnL % calculation: (unrealized_pnl / order_value) * 100.0 (Matching OKX Floating PnL %)
+                    floating_pnl_pct = round((upl / order_val * 100.0), 2) if order_val > 0 else 0.0
+                    
+                    # Extract SL and TP trigger prices from OKX position object, algo orders map, or local memory fallback
+                    sl_price = float(p.get("slTriggerPx", 0.0) or 0.0)
+                    if sl_price <= 0 and sym in algo_map:
+                        sl_price = algo_map[sym]["sl_price"]
+                    if sl_price <= 0 and sym in bot.paper_engine.active_positions:
+                        sl_price = float(bot.paper_engine.active_positions[sym].get("sl_price", 0.0) or 0.0)
+
+                    tp_price = float(p.get("tpTriggerPx", 0.0) or 0.0)
+                    if tp_price <= 0 and sym in algo_map:
+                        tp_price = algo_map[sym]["tp_price"]
+                    if tp_price <= 0 and sym in bot.paper_engine.active_positions:
+                        tp_price = float(bot.paper_engine.active_positions[sym].get("tp1_target", 0.0) or 0.0)
+
                     live_okx_positions.append({
                         "id": f"OKX-{sym}-{pos_side}",
                         "symbol": sym,
@@ -127,13 +160,13 @@ def get_status():
                         "leverage": int(float(p.get("lever", 3) or 3)),
                         "entry_price": entry_px,
                         "qty": abs(p_size),
-                        "order_value": round(abs(p_size) * entry_px, 2),
+                        "order_value": order_val,
                         "margin_required": float(p.get("margin", 100.0) or 100.0),
                         "unrealized_pnl": round(upl, 2),
-                        "pnl_pct": round(upl_ratio, 2),
-                        "sl_price": float(p.get("slTriggerPx", 0.0) or 0.0),
-                        "tp_price": float(p.get("tpTriggerPx", 0.0) or 0.0),
-                        "tp1_target": float(p.get("tpTriggerPx", 0.0) or 0.0),
+                        "pnl_pct": floating_pnl_pct,
+                        "sl_price": round(sl_price, 4),
+                        "tp_price": round(tp_price, 4),
+                        "tp1_target": round(tp_price, 4),
                         "status": "OPEN"
                     })
             res["active_positions"] = live_okx_positions

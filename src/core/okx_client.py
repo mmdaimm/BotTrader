@@ -462,3 +462,20 @@ class OKXClient:
         except Exception as e:
             print(f"[OKXClient] Close position exception: {e}")
             return {"status": "ERROR", "message": str(e)}
+
+    def get_pending_algo_orders(self, instType: str = "SWAP") -> dict:
+        """Fetch pending TP/SL algo orders from OKX (GET /api/v5/trade/orders-algo-pending)."""
+        self._resolve_keys()
+        if not self.api_key or not self.api_secret or not self.passphrase:
+            return {"code": "-1", "msg": "Unconfigured OKX API Key", "data": []}
+
+        try:
+            path = f"/api/v5/trade/orders-algo-pending?instType={instType}&ordType=conditional,oco,trigger"
+            url = f"{self.host}{path}"
+            headers = self._get_headers("GET", path)
+            req = urllib.request.Request(url, headers=headers)
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                return json.loads(resp.read().decode())
+        except Exception as e:
+            print(f"[OKXClient] Get pending algo orders exception: {e}")
+            return {"code": "-1", "msg": str(e), "data": []}
