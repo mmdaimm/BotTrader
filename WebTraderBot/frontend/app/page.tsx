@@ -587,7 +587,7 @@ export default function Dashboard() {
             alignItems: 'center',
             gap: '6px'
           }}>
-            🛡️ Active Monitoring (30m Loop: Active)
+            🛡️ Active Monitoring ({sidewayModeEnabled ? '15m Engine Loop' : '30m Engine Loop'}: Active)
           </div>
 
           <button onClick={seedDemoPositions} style={{
