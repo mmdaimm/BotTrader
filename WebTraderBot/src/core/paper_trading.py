@@ -138,79 +138,6 @@ class PaperTradingEngine:
             except Exception as e:
                 print(f"[PaperTradingEngine] Load state error: {e}")
 
-        if not self.active_positions:
-            self.active_positions = {
-                "ADA-USDT-SWAP": {
-                    "id": "PAPER-1784850000-ADA-USDT-SWAP-SHORT",
-                    "symbol": "ADA-USDT-SWAP",
-                    "side": "SHORT",
-                    "timeframe": "4h",
-                    "strategy_type": "SWING_4H",
-                    "leverage": 3,
-                    "entry_price": 0.163,
-                    "qty": 1533.74,
-                    "order_value": 250.0,
-                    "margin_required": 83.33,
-                    "initial_margin": 83.33,
-                    "sl_price": 0.168,
-                    "tp_price": 0.158,
-                    "tp1_target": 0.158,
-                    "tp1_done": False,
-                    "entry_time": "2026-07-24 06:40:00",
-                    "status": "OPEN"
-                },
-                "AVAX-USDT-SWAP": {
-                    "id": "PAPER-1784990000-AVAX-USDT-SWAP-LONG",
-                    "symbol": "AVAX-USDT-SWAP",
-                    "side": "LONG",
-                    "timeframe": "4h",
-                    "strategy_type": "SWING_4H",
-                    "leverage": 3,
-                    "entry_price": 6.715,
-                    "qty": 250.0,
-                    "order_value": 1678.75,
-                    "margin_required": 559.58,
-                    "initial_margin": 559.58,
-                    "sl_price": 6.596,
-                    "tp_price": 6.882,
-                    "tp1_target": 6.882,
-                    "tp1_done": False,
-                    "entry_time": "2026-07-26 13:00:00",
-                    "status": "OPEN"
-                }
-            }
-            for pos in self.active_positions.values():
-                self.db.save_order_trade(pos)
-
-        if not self.trade_history:
-            eth_closed = {
-                "id": "PAPER-1784835248-ETH-USDT-SWAP-SHORT",
-                "id_order": "PAPER-1784835248-ETH-USDT-SWAP-SHORT",
-                "symbol": "ETH-USDT-SWAP",
-                "side": "SHORT",
-                "type": "SHORT MANUAL MARKET CLOSE",
-                "timeframe": "4h",
-                "strategy_type": "SWING_4H",
-                "leverage": 3,
-                "entry_price": 1881.52,
-                "exit_price": 1869.02,
-                "qty": 2.6574,
-                "order_value": 5000.0,
-                "margin_required": 1666.67,
-                "sl_price": 1937.97,
-                "tp_price": 1825.07,
-                "net_pnl": 28.22,
-                "pnl_pct": 1.69,
-                "holding_duration_sec": 7200,
-                "holding_duration_formatted": "2h 0m",
-                "entry_time": "2026-07-24 02:34:08",
-                "exit_time": "2026-07-26 17:24:06",
-                "day_of_week": "Sunday",
-                "hour_of_day": 17
-            }
-            self.db.log_order_success(eth_closed)
-            self.trade_history = self.db.load_closed_trades_joined()
-
     def open_position(self, symbol: str, entry_price: float, risk_params: dict, side: str = "LONG", timeframe: str = "4h", market_snapshot: dict = None) -> dict:
         """
         Open a simulated Paper Trading position with 4H Swing State Machine (ST_OPEN_100).
@@ -294,6 +221,10 @@ class PaperTradingEngine:
         
         for symbol in list(self.active_positions.keys()):
             pos = self.active_positions[symbol]
+            # Skip OKX Live Exchange positions from local paper auto-closure loop
+            if pos.get("source") == "OKX_LIVE_EXCHANGE" or str(pos.get("id", "")).startswith("OKX-"):
+                continue
+
             item = pair_prices.get(symbol, {})
             current_price = item.get("last_price")
             eval_res = item.get("eval", {})
