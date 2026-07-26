@@ -321,13 +321,22 @@ class TraderBot:
                 if res.get("code") == "0":
                     live_positions = res.get("data", [])
                     synced_count = 0
+
+                    def safe_float(val, default=0.0):
+                        try:
+                            if val is None or str(val).strip() == "":
+                                return float(default)
+                            return float(val)
+                        except (ValueError, TypeError):
+                            return float(default)
+
                     for pos in live_positions:
-                        pos_size = float(pos.get("pos", 0))
+                        pos_size = safe_float(pos.get("pos"), 0.0)
                         if pos_size != 0:
                             symbol = pos.get("instId")
                             side = "LONG" if pos_size > 0 else "SHORT"
-                            entry_p = float(pos.get("avgPx", 0))
-                            margin = float(pos.get("margin", 0))
+                            entry_p = safe_float(pos.get("avgPx"), 0.0)
+                            margin = safe_float(pos.get("margin"), 0.0)
                             
                             order_payload = {
                                 "id": f"LIVE-{symbol}-{side}",
@@ -335,17 +344,17 @@ class TraderBot:
                                 "side": side,
                                 "timeframe": "4h",
                                 "strategy_type": "SWING_4H",
-                                "leverage": int(pos.get("lever", 3)),
+                                "leverage": int(safe_float(pos.get("lever"), 3)),
                                 "entry_price": entry_p,
                                 "qty": abs(pos_size),
                                 "order_value": abs(pos_size) * entry_p,
                                 "margin_required": margin if margin > 0 else 100.0,
                                 "initial_margin": margin if margin > 0 else 100.0,
-                                "sl_price": float(pos.get("slTriggerPx", 0.0)) or 0.0,
-                                "tp_price": float(pos.get("tpTriggerPx", 0.0)) or 0.0,
-                                "tp1_target": float(pos.get("tpTriggerPx", 0.0)) or 0.0,
+                                "sl_price": safe_float(pos.get("slTriggerPx"), 0.0),
+                                "tp_price": safe_float(pos.get("tpTriggerPx"), 0.0),
+                                "tp1_target": safe_float(pos.get("tpTriggerPx"), 0.0),
                                 "tp1_done": False,
-                                "realized_pnl": float(pos.get("realizedPnl", 0.0)),
+                                "realized_pnl": safe_float(pos.get("realizedPnl"), 0.0),
                                 "state": "ST_OPEN_100",
                                 "entry_time": time.strftime("%Y-%m-%d %H:%M:%S"),
                                 "status": "OPEN"
