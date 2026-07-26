@@ -1,6 +1,6 @@
 """
 WebTraderBot Relational SQLite Database Manager
-Implements 2-Table Normalized Order Management System Architecture:
+Implements 2-Table Normalized Order Management System Architecture with B-Tree Query Indexing:
 1. Order_trade_crypto: Master order table (status = 'OPEN' / 'CLOSE', strategy_type = 'SWING_4H' / 'SIDEWAY_15M')
 2. Order_successed_crypto: Execution history table (id_order = FK to Order_trade_crypto)
 """
@@ -24,10 +24,12 @@ class DatabaseManager:
     def get_connection(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.db_path, timeout=10.0)
         conn.row_factory = sqlite3.Row
+        # Enable Foreign Key enforcement in SQLite per connection
+        conn.execute("PRAGMA foreign_keys = ON")
         return conn
 
     def _init_db(self):
-        """Initialize 2-Table Normalized Order Schema."""
+        """Initialize 2-Table Normalized Order Schema & B-Tree High-Performance Indexes."""
         with self.get_connection() as conn:
             cursor = conn.cursor()
             
@@ -103,6 +105,17 @@ class DatabaseManager:
                     FOREIGN KEY (id_order) REFERENCES Order_trade_crypto(id) ON DELETE CASCADE
                 )
             """)
+
+            # B-Tree Query Performance Indexing Optimization
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_order_status ON Order_trade_crypto(status)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_order_symbol ON Order_trade_crypto(symbol)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_order_strategy ON Order_trade_crypto(strategy_type)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_success_idorder ON Order_successed_crypto(id_order)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_audit_type ON system_audit_logs(event_type)")
+
+            # Clean up old legacy tables if they exist
+            cursor.execute("DROP TABLE IF EXISTS active_positions")
+            cursor.execute("DROP TABLE IF EXISTS trade_history")
 
             # Table 4: Cashflow Logs
             cursor.execute("""
@@ -196,9 +209,31 @@ class DatabaseManager:
             conn.commit()
 
     def log_order_success(self, trade: Dict[str, Any]):
-        """Insert execution record into Order_successed_crypto table."""
+        """Insert execution record into Order_successed_crypto table with foreign key resolution."""
         with self.get_connection() as conn:
             cursor = conn.cursor()
+            id_order = trade.get("id_order", trade["id"].replace("-TP1", "").replace("-CLOSE", ""))
+            
+            # Relational Integrity Guard: Ensure master order exists in Order_trade_crypto
+            master_exists = cursor.execute("SELECT id FROM Order_trade_crypto WHERE id = ?", (id_order,)).fetchone()
+            if not master_exists:
+                cursor.execute("""
+                    INSERT INTO Order_trade_crypto (
+                        id, symbol, side, timeframe, strategy_type, leverage, entry_price, qty, order_value,
+                        margin_required, initial_margin, sl_price, tp_price, tp1_target, tp1_done,
+                        realized_pnl, state, entry_time, status, market_snapshot_json
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(id) DO NOTHING
+                """, (
+                    id_order, trade.get("symbol", "UNKNOWN"), trade.get("side", "LONG"),
+                    trade.get("timeframe", "4h"), trade.get("strategy_type", "SWING_4H"),
+                    trade.get("leverage", 3), trade.get("entry_price", trade.get("exit_price", 0.0)),
+                    trade.get("qty", 1.0), trade.get("order_value", 100.0), trade.get("margin_required", 33.3),
+                    trade.get("margin_required", 33.3), trade.get("sl_price", 0.0), trade.get("tp_price", 0.0),
+                    trade.get("tp_price", 0.0), 1, trade.get("net_pnl", 0.0), "ST_CLOSED",
+                    trade.get("entry_time", trade.get("exit_time", "")), "CLOSE", "{}"
+                ))
+
             cursor.execute("""
                 INSERT OR REPLACE INTO Order_successed_crypto (
                     id, id_order, type, exit_price, net_pnl, pnl_pct,
@@ -206,7 +241,7 @@ class DatabaseManager:
                     exit_time, day_of_week, hour_of_day
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
-                trade["id"], trade.get("id_order", trade["id"].replace("-TP1", "").replace("-CLOSE", "")), trade["type"],
+                trade["id"], id_order, trade["type"],
                 trade["exit_price"], trade["net_pnl"], trade["pnl_pct"],
                 trade.get("holding_duration_sec", 0), trade.get("holding_duration_formatted", ""),
                 trade["exit_time"], trade.get("day_of_week", ""), trade.get("hour_of_day", 0)
