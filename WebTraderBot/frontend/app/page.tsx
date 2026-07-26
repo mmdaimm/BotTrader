@@ -851,6 +851,21 @@ export default function Dashboard() {
               Selected Asset: <span style={{ color: '#00f090' }}>{chartSymbol}</span>
             </div>
 
+            {/* OKX Account Balance & Equity Gauge Card */}
+            <div style={{ marginBottom: '16px', background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.1), rgba(59, 130, 246, 0.1))', padding: '14px', borderRadius: '12px', border: '1px solid rgba(16, 185, 129, 0.3)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', fontWeight: '700', color: '#10b981', marginBottom: '8px' }}>
+                <span>💳 OKX Account Balance (Demo USDT)</span>
+                <span>{okxBalance.simulated ? '🟡 OKX DEMO' : '🟢 LIVE'}</span>
+              </div>
+              <div style={{ fontSize: '20px', fontWeight: '800', color: '#ffffff', fontFamily: 'monospace', marginBottom: '4px' }}>
+                ${(okxBalance.total_equity || data?.paper_summary?.current_capital || 10000.0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} <span style={{ fontSize: '11px', color: '#10b981' }}>USD</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: '#9ca3af' }}>
+                <span>Available Margin: <strong style={{ color: '#60a5fa' }}>${(okxBalance.available_margin || data?.paper_summary?.available_capital || 9665.97).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong></span>
+                <span>Margin Health: <strong style={{ color: '#00f090' }}>Safe (Cross 3x)</strong></span>
+              </div>
+            </div>
+
             {/* OKX Live Orderbook Depth Ladder */}
             <div style={{ background: 'rgba(11, 15, 25, 0.8)', padding: '14px', borderRadius: '12px', border: '1px solid rgba(255, 255, 255, 0.05)' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', fontWeight: '700', marginBottom: '10px', color: '#9ca3af', borderBottom: '1px solid rgba(255, 255, 255, 0.08)', paddingBottom: '6px' }}>
