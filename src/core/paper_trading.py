@@ -158,6 +158,7 @@ class PaperTradingEngine:
         except Exception as e:
             print(f"[PaperTradingEngine] Dynamic seed error: {e}")
         if not self.trade_history:
+            now_struct = time.localtime()
             self.trade_history = [
                 {
                     "id": "PAPER-1784837676-BTC-USDT-SWAP-SHORT-CLOSE",
