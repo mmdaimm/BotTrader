@@ -316,27 +316,14 @@ class OKXClient:
             contract_multiplier = CONTRACT_SIZES.get(symbol, 1.0)
             sz_contracts = max(1, int(round(sz / contract_multiplier)))
 
-            payload = {
-                "instId": symbol,
-                "tdMode": td_mode,
-                "side": side_str,
-                "posSide": pos_side,
-                "ordType": "market",
-                "sz": str(sz_contracts)
-            }
-
-            if sl_price or tp_price:
-                algo_item = {}
-                if sl_price and float(sl_price) > 0:
-                    algo_item["slTriggerPx"] = f"{float(sl_price):.4f}"
-                    algo_item["slOrdPx"] = "-1"
-                    algo_item["slTriggerPxType"] = "last"
-                if tp_price and float(tp_price) > 0:
-                    algo_item["tpTriggerPx"] = f"{float(tp_price):.4f}"
-                    algo_item["tpOrdPx"] = "-1"
-                    algo_item["tpTriggerPxType"] = "last"
-                if algo_item:
-                    payload["attachAlgoOrds"] = [algo_item]
+            # Build clean attached SL/TP algo orders
+            algo_item = {}
+            if sl_price and float(sl_price) > 0:
+                algo_item["slTriggerPx"] = f"{float(sl_price):.4f}"
+                algo_item["slOrdPx"] = "-1"
+            if tp_price and float(tp_price) > 0:
+                algo_item["tpTriggerPx"] = f"{float(tp_price):.4f}"
+                algo_item["tpOrdPx"] = "-1"
 
             def _execute_order(p_dict):
                 b_str = json.dumps(p_dict)
@@ -372,27 +359,30 @@ class OKXClient:
                         "raw_response": d
                     }
 
-            # Stage 1: Try Standard Hedge-Mode Order with attached SL/TP (TriggerPxType='last')
-            res1 = _execute_order(payload)
-            if res1.get("status") == "SUCCESS":
-                return res1
+            # 5-Stage Multi-Mode Robust Execution Pipeline
+            stages = [
+                # Stage 1: Isolated Hedge Mode + attached SL/TP
+                {"instId": symbol, "tdMode": "isolated", "side": side_str, "posSide": pos_side, "ordType": "market", "sz": str(sz_contracts), "attachAlgoOrds": [algo_item] if algo_item else None},
+                # Stage 2: Cross Margin Hedge Mode + attached SL/TP
+                {"instId": symbol, "tdMode": "cross", "side": side_str, "posSide": pos_side, "ordType": "market", "sz": str(sz_contracts), "attachAlgoOrds": [algo_item] if algo_item else None},
+                # Stage 3: Cross Margin Net Mode + attached SL/TP
+                {"instId": symbol, "tdMode": "cross", "side": side_str, "ordType": "market", "sz": str(sz_contracts), "attachAlgoOrds": [algo_item] if algo_item else None},
+                # Stage 4: Cross Margin Pure Market (No SL/TP, No posSide)
+                {"instId": symbol, "tdMode": "cross", "side": side_str, "ordType": "market", "sz": str(sz_contracts)},
+                # Stage 5: Isolated Margin Pure Market (No SL/TP, No posSide)
+                {"instId": symbol, "tdMode": "isolated", "side": side_str, "ordType": "market", "sz": str(sz_contracts)}
+            ]
 
-            # Stage 2: Net Mode Fallback (remove posSide)
-            payload_net = payload.copy()
-            payload_net.pop("posSide", None)
-            res2 = _execute_order(payload_net)
-            if res2.get("status") == "SUCCESS":
-                return res2
+            last_res = None
+            for idx, stage_payload in enumerate(stages, 1):
+                clean_payload = {k: v for k, v in stage_payload.items() if v is not None}
+                res = _execute_order(clean_payload)
+                if res.get("status") == "SUCCESS":
+                    res["stage_success"] = idx
+                    return res
+                last_res = res
 
-            # Stage 3: Pure Market Order Fallback (remove attachAlgoOrds and posSide)
-            payload_pure = payload.copy()
-            payload_pure.pop("attachAlgoOrds", None)
-            payload_pure.pop("posSide", None)
-            res3 = _execute_order(payload_pure)
-            if res3.get("status") == "SUCCESS":
-                return res3
-
-            return res1
+            return last_res if last_res else {"status": "ERROR", "message": "All execution stages failed"}
         except Exception as e:
             print(f"[OKXClient] Place order exception: {e}")
             return {"status": "ERROR", "message": str(e)}
