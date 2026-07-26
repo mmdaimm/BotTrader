@@ -234,17 +234,26 @@ class OKXClient:
                 data = json.loads(resp.read().decode())
                 if data.get("code") == "0" and data.get("data"):
                     bal = data["data"][0]
-                    total_eq = float(bal.get("totalEq", 0.0))
-                    iso_eq = float(bal.get("isoEq", 0.0))
-                    adj_eq = float(bal.get("adjEq", total_eq))
-                    ord_froz = float(bal.get("ordFroz", 0.0))
-                    mgn_ratio = float(bal.get("mgnRatio", 0.0))
+                    
+                    def safe_float(val, default=0.0):
+                        try:
+                            if val is None or str(val).strip() == "":
+                                return float(default)
+                            return float(val)
+                        except (ValueError, TypeError):
+                            return float(default)
+
+                    total_eq = safe_float(bal.get("totalEq"), 0.0)
+                    iso_eq = safe_float(bal.get("isoEq"), 0.0)
+                    adj_eq = safe_float(bal.get("adjEq"), total_eq)
+                    ord_froz = safe_float(bal.get("ordFroz"), 0.0)
+                    mgn_ratio = safe_float(bal.get("mgnRatio"), 0.0)
                     
                     details = bal.get("details", [])
                     usdt_avail = total_eq
                     for d in details:
                         if d.get("ccy") == "USDT":
-                            usdt_avail = float(d.get("availBal", total_eq))
+                            usdt_avail = safe_float(d.get("availBal") or d.get("eq") or d.get("cashBal"), total_eq)
 
                     return {
                         "status": "SUCCESS",
