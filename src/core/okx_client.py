@@ -65,20 +65,27 @@ class OKXClient:
 
     def _resolve_keys(self):
         """Dynamically resolve environment keys at runtime if empty on boot."""
+        def _get_non_empty(var_names):
+            for name in var_names:
+                val = os.getenv(name)
+                if val is not None and len(str(val).strip()) > 0:
+                    return str(val).strip()
+            return ""
+
         if self.simulated:
             if not self.api_key:
-                self.api_key = (os.getenv("OKX_DEMO_API_KEY") or os.getenv("OKX_ACCESS_KEY") or os.getenv("OKX_API_KEY") or os.getenv("OKX_KEY") or "").strip()
+                self.api_key = _get_non_empty(["OKX_DEMO_API_KEY", "OKX_ACCESS_KEY", "OKX_API_KEY", "OKX_KEY"])
             if not self.api_secret:
-                self.api_secret = (os.getenv("OKX_DEMO_SECRET_KEY") or os.getenv("OKX_ACCESS_SECRET") or os.getenv("OKX_SECRET_KEY") or os.getenv("OKX_API_SECRET") or os.getenv("OKX_SECRET") or "").strip()
+                self.api_secret = _get_non_empty(["OKX_DEMO_SECRET_KEY", "OKX_ACCESS_SECRET", "OKX_SECRET_KEY", "OKX_API_SECRET", "OKX_SECRET"])
             if not self.passphrase:
-                self.passphrase = (os.getenv("OKX_DEMO_PASSPHRASE") or os.getenv("OKX_ACCESS_PASSPHRASE") or os.getenv("OKX_PASSPHRASE") or "").strip()
+                self.passphrase = _get_non_empty(["OKX_DEMO_PASSPHRASE", "OKX_ACCESS_PASSPHRASE", "OKX_PASSPHRASE"])
         else:
             if not self.api_key:
-                self.api_key = (os.getenv("OKX_LIVE_API_KEY") or os.getenv("OKX_ACCESS_KEY") or os.getenv("OKX_API_KEY") or os.getenv("OKX_KEY") or "").strip()
+                self.api_key = _get_non_empty(["OKX_LIVE_API_KEY", "OKX_ACCESS_KEY", "OKX_API_KEY", "OKX_KEY"])
             if not self.api_secret:
-                self.api_secret = (os.getenv("OKX_LIVE_SECRET_KEY") or os.getenv("OKX_ACCESS_SECRET") or os.getenv("OKX_SECRET_KEY") or os.getenv("OKX_API_SECRET") or os.getenv("OKX_SECRET") or "").strip()
+                self.api_secret = _get_non_empty(["OKX_LIVE_SECRET_KEY", "OKX_ACCESS_SECRET", "OKX_SECRET_KEY", "OKX_API_SECRET", "OKX_SECRET"])
             if not self.passphrase:
-                self.passphrase = (os.getenv("OKX_LIVE_PASSPHRASE") or os.getenv("OKX_ACCESS_PASSPHRASE") or os.getenv("OKX_PASSPHRASE") or "").strip()
+                self.passphrase = _get_non_empty(["OKX_LIVE_PASSPHRASE", "OKX_ACCESS_PASSPHRASE", "OKX_PASSPHRASE"])
 
     def _generate_signature(self, timestamp: str, method: str, request_path: str, body: str = "") -> str:
         """Generate OKX API v5 Base64 HMAC-SHA256 signature."""
