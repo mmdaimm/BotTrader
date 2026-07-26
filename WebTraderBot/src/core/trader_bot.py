@@ -312,12 +312,13 @@ class TraderBot:
 
     def sync_live_exchange_positions(self) -> dict:
         """
-        Reconcile and sync live OKX exchange positions with SQLite Order_trade_crypto.
-        Exclusively used in LIVE mode to guarantee 100% Single Source of Truth from Exchange APIs.
+        Reconcile and sync live OKX exchange positions into active_positions.
+        Fetches directly from OKX Demo / Live API to guarantee 100% Exchange Synchronization.
         """
-        if self.trading_mode == "LIVE" and hasattr(self, 'okx_client') and self.okx_client:
+        client = getattr(self, 'okx_client', None) or getattr(self, 'client', None)
+        if client and hasattr(client, 'get_positions'):
             try:
-                res = self.okx_client.get_positions(instType="SWAP")
+                res = client.get_positions(instType="SWAP")
                 if res.get("code") == "0":
                     live_positions = res.get("data", [])
                     synced_count = 0
@@ -330,16 +331,23 @@ class TraderBot:
                         except (ValueError, TypeError):
                             return float(default)
 
+                    new_active_positions = {}
                     for pos in live_positions:
                         pos_size = safe_float(pos.get("pos"), 0.0)
                         if pos_size != 0:
-                            symbol = pos.get("instId")
+                            raw_sym = pos.get("instId", "")
+                            symbol = raw_sym
                             side = "LONG" if pos_size > 0 else "SHORT"
+                            if pos.get("posSide") and pos.get("posSide").lower() in ["long", "short"]:
+                                side = pos.get("posSide").upper()
+
                             entry_p = safe_float(pos.get("avgPx"), 0.0)
                             margin = safe_float(pos.get("margin"), 0.0)
+                            unrealized_pnl = safe_float(pos.get("upl"), 0.0)
+                            upl_ratio = safe_float(pos.get("uplRatio"), 0.0) * 100.0
                             
-                            order_payload = {
-                                "id": f"LIVE-{symbol}-{side}",
+                            pos_record = {
+                                "id": f"OKX-{symbol}-{side}",
                                 "symbol": symbol,
                                 "side": side,
                                 "timeframe": "4h",
@@ -350,6 +358,8 @@ class TraderBot:
                                 "order_value": abs(pos_size) * entry_p,
                                 "margin_required": margin if margin > 0 else 100.0,
                                 "initial_margin": margin if margin > 0 else 100.0,
+                                "unrealized_pnl": round(unrealized_pnl, 2),
+                                "pnl_pct": round(upl_ratio, 2),
                                 "sl_price": safe_float(pos.get("slTriggerPx"), 0.0),
                                 "tp_price": safe_float(pos.get("tpTriggerPx"), 0.0),
                                 "tp1_target": safe_float(pos.get("tpTriggerPx"), 0.0),
@@ -357,15 +367,19 @@ class TraderBot:
                                 "realized_pnl": safe_float(pos.get("realizedPnl"), 0.0),
                                 "state": "ST_OPEN_100",
                                 "entry_time": time.strftime("%Y-%m-%d %H:%M:%S"),
-                                "status": "OPEN"
+                                "status": "OPEN",
+                                "source": "OKX_LIVE_EXCHANGE"
                             }
-                            self.db.save_order_trade(order_payload)
+                            new_active_positions[symbol] = pos_record
                             synced_count += 1
+                    
+                    if new_active_positions:
+                        self.paper_engine.active_positions.update(new_active_positions)
                     return {"status": "SUCCESS", "message": f"Synced {synced_count} live exchange positions from OKX"}
             except Exception as e:
                 print(f"[TraderBot] OKX Live Position Sync exception: {e}")
                 return {"status": "ERROR", "message": str(e)}
-        return {"status": "SKIPPED", "message": "Live position sync not applicable for PAPER mode"}
+        return {"status": "SKIPPED", "message": "OKX Client unconfigured"}
 
     def run_single_iteration(self) -> dict:
         """Execute 1 Iteration Loop across 4H Swing and 15m Sideway Engine."""
@@ -420,6 +434,12 @@ class TraderBot:
                 "active_positions": list(self.paper_engine.active_positions.values()),
                 "trade_history": self.paper_engine.trade_history[:10]
             }
+
+        # Auto-reconcile and sync live OKX exchange positions into active_positions
+        try:
+            self.sync_live_exchange_positions()
+        except Exception as e:
+            print(f"[TraderBot] Live position sync error: {e}")
 
         opened_symbols_this_iteration = set()
         pair_results = {}
