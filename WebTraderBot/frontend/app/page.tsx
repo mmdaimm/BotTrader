@@ -159,6 +159,30 @@ export default function Dashboard() {
   const [tradingMode, setTradingMode] = useState<string>('PAPER');
   const [sidewayModeEnabled, setSidewayModeEnabled] = useState<boolean>(false);
   const [sidewayState, setSidewayState] = useState<string>('DISABLED');
+  const [orderbook, setOrderbook] = useState<{ bids: number[][]; asks: number[][]; symbol?: string }>({ bids: [], asks: [] });
+  const [okxBalance, setOkxBalance] = useState<{ total_equity?: number; available_margin?: number; margin_ratio?: number }>({});
+
+  useEffect(() => {
+    const fetchOkxData = async () => {
+      try {
+        const obRes = await fetch(`${backendUrl}/api/okx/orderbook?symbol=${chartSymbol}&depth=6`).catch(() => null);
+        if (obRes && obRes.ok) {
+          const obData = await obRes.json();
+          if (obData.bids && obData.asks) setOrderbook(obData);
+        }
+        const balRes = await fetch(`${backendUrl}/api/okx/balance`).catch(() => null);
+        if (balRes && balRes.ok) {
+          const balData = await balRes.json();
+          setOkxBalance(balData);
+        }
+      } catch (e) {
+        console.error('Error fetching OKX orderbook/balance:', e);
+      }
+    };
+    fetchOkxData();
+    const okxInterval = setInterval(fetchOkxData, 3000);
+    return () => clearInterval(okxInterval);
+  }, [chartSymbol, backendUrl]);
 
   // Chart State
   const [chartSymbol, setChartSymbol] = useState<string>('BTC-USDT-SWAP');
@@ -821,6 +845,39 @@ export default function Dashboard() {
               }}>
                 Refresh
               </button>
+            </div>
+
+            {/* OKX Live Orderbook Depth Ladder */}
+            <div style={{ marginBottom: '16px', background: 'rgba(11, 15, 25, 0.6)', padding: '10px', borderRadius: '10px', border: '1px solid rgba(255, 255, 255, 0.05)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', fontWeight: '700', marginBottom: '8px', color: '#60a5fa' }}>
+                <span>📖 OKX Orderbook Depth ({chartSymbol.split('-')[0]})</span>
+                <span style={{ color: '#9ca3af', fontSize: '10px' }}>OKX Demo API</span>
+              </div>
+              
+              {/* Asks (Sells) */}
+              <div style={{ fontSize: '10px', fontFamily: 'monospace' }}>
+                {(orderbook.asks || []).slice(0, 3).reverse().map((ask, idx) => (
+                  <div key={`ask-${idx}`} style={{ display: 'flex', justifyContent: 'space-between', padding: '1px 0', color: '#ff3b69' }}>
+                    <span>Ask ${ask[0]?.toLocaleString()}</span>
+                    <span>{ask[1]?.toLocaleString()} sz</span>
+                  </div>
+                ))}
+              </div>
+
+              {/* Spread / Current Price */}
+              <div style={{ textAlign: 'center', padding: '4px 0', color: '#10b981', fontWeight: '700', fontSize: '11px', borderTop: '1px dashed rgba(255, 255, 255, 0.1)', borderBottom: '1px dashed rgba(255, 255, 255, 0.1)', margin: '4px 0' }}>
+                ⚡ ${pairs[chartSymbol]?.last_price ? pairs[chartSymbol].last_price.toLocaleString() : '---'} USD (Live OKX Price)
+              </div>
+
+              {/* Bids (Buys) */}
+              <div style={{ fontSize: '10px', fontFamily: 'monospace' }}>
+                {(orderbook.bids || []).slice(0, 3).map((bid, idx) => (
+                  <div key={`bid-${idx}`} style={{ display: 'flex', justifyContent: 'space-between', padding: '1px 0', color: '#00f090' }}>
+                    <span>Bid ${bid[0]?.toLocaleString()}</span>
+                    <span>{bid[1]?.toLocaleString()} sz</span>
+                  </div>
+                ))}
+              </div>
             </div>
 
             <div style={{ display: 'flex', gap: '4px', alignItems: 'center', flexWrap: 'wrap', marginBottom: '12px' }}>

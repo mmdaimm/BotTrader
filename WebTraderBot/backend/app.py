@@ -406,6 +406,16 @@ def get_active_monitoring_status():
     """Return real-time Active Monitoring Engine diagnostic status and last 30m scan telemetry."""
     return bot.active_monitor.last_scan_results
 
+@app.get("/api/okx/orderbook")
+def get_okx_orderbook(symbol: str = Query("BTC-USDT-SWAP"), depth: int = Query(10)):
+    """Fetch live OKX Bids/Asks orderbook depth for trading terminal."""
+    return bot.client.get_orderbook(symbol=symbol, depth=depth)
+
+@app.get("/api/okx/balance")
+def get_okx_balance():
+    """Fetch live OKX Demo / Real account balance and margin health ratio."""
+    return bot.client.get_account_balance()
+
 if __name__ == "__main__":
     import uvicorn
     port = int(os.getenv("PORT", 8080))
