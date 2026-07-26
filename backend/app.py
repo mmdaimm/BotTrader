@@ -427,6 +427,16 @@ def debug_okx_env():
         "raw_environment_variables_detected": okx_raw_envs
     }
 
+@app.get("/api/okx/test-order")
+def test_okx_order(symbol: str = "AVAX-USDT-SWAP"):
+    """Live diagnostic endpoint to test OKX Demo API order placement and capture exact raw OKX API responses."""
+    client = bot.client
+    res = client.place_market_order(symbol, "LONG", 250.0, sl_price=6.526, tp_price=6.986)
+    return {
+        "symbol": symbol,
+        "result": res
+    }
+
 if __name__ == "__main__":
     import uvicorn
     port = int(os.getenv("PORT", 8080))
