@@ -300,6 +300,54 @@ class TraderBot:
             "message": f"Sideway Mode updated to {self.sideway_state}"
         }
 
+    def sync_live_exchange_positions(self) -> dict:
+        """
+        Reconcile and sync live OKX exchange positions with SQLite Order_trade_crypto.
+        Exclusively used in LIVE mode to guarantee 100% Single Source of Truth from Exchange APIs.
+        """
+        if self.trading_mode == "LIVE" and hasattr(self, 'okx_client') and self.okx_client:
+            try:
+                res = self.okx_client.get_positions(instType="SWAP")
+                if res.get("code") == "0":
+                    live_positions = res.get("data", [])
+                    synced_count = 0
+                    for pos in live_positions:
+                        pos_size = float(pos.get("pos", 0))
+                        if pos_size != 0:
+                            symbol = pos.get("instId")
+                            side = "LONG" if pos_size > 0 else "SHORT"
+                            entry_p = float(pos.get("avgPx", 0))
+                            margin = float(pos.get("margin", 0))
+                            
+                            order_payload = {
+                                "id": f"LIVE-{symbol}-{side}",
+                                "symbol": symbol,
+                                "side": side,
+                                "timeframe": "4h",
+                                "strategy_type": "SWING_4H",
+                                "leverage": int(pos.get("lever", 3)),
+                                "entry_price": entry_p,
+                                "qty": abs(pos_size),
+                                "order_value": abs(pos_size) * entry_p,
+                                "margin_required": margin if margin > 0 else 100.0,
+                                "initial_margin": margin if margin > 0 else 100.0,
+                                "sl_price": float(pos.get("slTriggerPx", 0.0)) or 0.0,
+                                "tp_price": float(pos.get("tpTriggerPx", 0.0)) or 0.0,
+                                "tp1_target": float(pos.get("tpTriggerPx", 0.0)) or 0.0,
+                                "tp1_done": False,
+                                "realized_pnl": float(pos.get("realizedPnl", 0.0)),
+                                "state": "ST_OPEN_100",
+                                "entry_time": time.strftime("%Y-%m-%d %H:%M:%S"),
+                                "status": "OPEN"
+                            }
+                            self.db.save_order_trade(order_payload)
+                            synced_count += 1
+                    return {"status": "SUCCESS", "message": f"Synced {synced_count} live exchange positions from OKX"}
+            except Exception as e:
+                print(f"[TraderBot] OKX Live Position Sync exception: {e}")
+                return {"status": "ERROR", "message": str(e)}
+        return {"status": "SKIPPED", "message": "Live position sync not applicable for PAPER mode"}
+
     def run_single_iteration(self) -> dict:
         """Execute 1 Iteration Loop across 4H Swing and 15m Sideway Engine."""
         # Telegram Command Check (Panic Stop)

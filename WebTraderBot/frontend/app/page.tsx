@@ -1049,7 +1049,9 @@ export default function Dashboard() {
                 })
               ) : (
                 <tr>
-                  <td colSpan={6} style={{ padding: '16px 0', color: '#6b7280', textAlign: 'center' }}>No active positions</td>
+                  <td colSpan={6} style={{ padding: '18px 0', color: '#10b981', textAlign: 'center', fontWeight: '600', background: 'rgba(16, 185, 129, 0.05)', borderRadius: '8px' }}>
+                    📡 Ready & Active: Scanning OKX 15m / 4H candles for signal entries... (No active positions)
+                  </td>
                 </tr>
               );
             })()}

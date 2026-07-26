@@ -62,6 +62,8 @@ bot = TraderBot(
     resolution="240",
     initial_capital=10000.0
 )
+# Reconcile & Sync live OKX exchange positions on app startup if in LIVE mode
+bot.sync_live_exchange_positions()
 quant_analyzer = QuantAnalyzer()
 cashflow_engine = CashFlowEngine(bot.client)
 
