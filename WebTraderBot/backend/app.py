@@ -237,9 +237,20 @@ def sim_buy(symbol: str = Query("BTC-USDT-SWAP"), side: str = Query("LONG")):
     if candles:
         price = candles[-1]["close"]
         atr = 0.02 * price
-        risk = bot.risk_engine.calculate_position_sizing(bot.paper_engine.current_capital, price, atr, side=side)
+        risk = bot.risk_engine.calculate_position_sizing(bot.paper_engine.currentCapital if hasattr(bot.paper_engine, 'currentCapital') else bot.paper_engine.current_capital, price, atr, side=side)
+        
+        # 1. Open in Local Paper Trading Engine
         res = bot.paper_engine.open_position(symbol, price, risk, side=side)
-        return {"status": "SUCCESS", "message": f"Simulated Paper {side} Order placed for {symbol} at ${price:,.2f}"}
+        
+        # 2. ALSO Execute Order on OKX Demo API directly (x-simulated-trading: 1)
+        okx_res = bot.client.place_market_order(symbol=symbol, side=side, sz=risk.get("order_value", 250.0))
+        
+        if okx_res.get("status") == "SUCCESS":
+            msg = f"🟢 ส่งออเดอร์เข้า OKX Demo Account สำเร็จ! (Order ID: {okx_res.get('order_id')}) เปิด {side} สำหรับ {symbol} ที่ราคา ${price:,.2f}"
+        else:
+            msg = f"เปิดออเดอร์จำลอง Paper {side} สำหรับ {symbol} ที่ราคา ${price:,.2f} (OKX Note: {okx_res.get('message', 'Paper Mode')})"
+
+        return {"status": "SUCCESS", "message": msg, "okx_response": okx_res}
     return {"status": "ERROR", "message": f"Failed to fetch market data for {symbol}"}
 
 @app.post("/api/close-position")

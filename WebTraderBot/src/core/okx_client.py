@@ -295,3 +295,73 @@ class OKXClient:
                 "message": str(e),
                 "total_equity": None
             }
+
+    def place_market_order(self, symbol: str, side: str, sz: float, td_mode: str = "isolated") -> dict:
+        """
+        Place Market Order on OKX Demo / Live API (POST /api/v5/trade/order).
+        side: 'LONG' (buy long) or 'SHORT' (sell short)
+        """
+        self._resolve_keys()
+        if not self.api_key or not self.api_secret or not self.passphrase:
+            return {"status": "ERROR", "message": "OKX API Keys missing on server"}
+
+        try:
+            path = "/api/v5/trade/order"
+            url = f"{self.host}{path}"
+            
+            side_str = "buy" if side.upper() == "LONG" else "sell"
+            pos_side = "long" if side.upper() == "LONG" else "short"
+            
+            contract_multiplier = CONTRACT_SIZES.get(symbol, 1.0)
+            sz_contracts = max(1, int(round(sz / contract_multiplier)))
+
+            payload = {
+                "instId": symbol,
+                "tdMode": td_mode,
+                "side": side_str,
+                "posSide": pos_side,
+                "ordType": "market",
+                "sz": str(sz_contracts)
+            }
+            body = json.dumps(payload)
+            headers = self._get_headers("POST", path, body)
+            req = urllib.request.Request(url, data=body.encode('utf-8'), headers=headers, method="POST")
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                data = json.loads(resp.read().decode())
+                if data.get("code") == "0" and data.get("data"):
+                    order_info = data["data"][0]
+                    return {
+                        "status": "SUCCESS",
+                        "order_id": order_info.get("ordId"),
+                        "symbol": symbol,
+                        "side": side,
+                        "contracts": sz_contracts,
+                        "raw_response": data
+                    }
+                else:
+                    return {
+                        "status": "API_ERROR",
+                        "code": data.get("code"),
+                        "message": data.get("msg", "OKX Order placement failed"),
+                        "raw_response": data
+                    }
+        except Exception as e:
+            print(f"[OKXClient] Place order exception: {e}")
+            return {"status": "ERROR", "message": str(e)}
+
+    def get_positions(self, instType: str = "SWAP") -> dict:
+        """Fetch active positions from OKX (GET /api/v5/account/positions)."""
+        self._resolve_keys()
+        if not self.api_key or not self.api_secret or not self.passphrase:
+            return {"code": "-1", "msg": "Unconfigured OKX API Key", "data": []}
+
+        try:
+            path = f"/api/v5/account/positions?instType={instType}"
+            url = f"{self.host}{path}"
+            headers = self._get_headers("GET", path)
+            req = urllib.request.Request(url, headers=headers)
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                return json.loads(resp.read().decode())
+        except Exception as e:
+            print(f"[OKXClient] Get positions exception: {e}")
+            return {"code": "-1", "msg": str(e), "data": []}
