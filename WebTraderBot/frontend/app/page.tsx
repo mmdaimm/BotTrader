@@ -162,6 +162,11 @@ export default function Dashboard() {
   const [orderbook, setOrderbook] = useState<{ bids: number[][]; asks: number[][]; symbol?: string }>({ bids: [], asks: [] });
   const [okxBalance, setOkxBalance] = useState<{ total_equity?: number; available_margin?: number; margin_ratio?: number }>({});
 
+  // Chart State
+  const [chartSymbol, setChartSymbol] = useState<string>('BTC-USDT-SWAP');
+  const [chartResolution, setChartResolution] = useState<string>('240');
+  const [candles, setCandles] = useState<CandleData[]>([]);
+
   useEffect(() => {
     const fetchOkxData = async () => {
       try {
@@ -183,11 +188,6 @@ export default function Dashboard() {
     const okxInterval = setInterval(fetchOkxData, 3000);
     return () => clearInterval(okxInterval);
   }, [chartSymbol, backendUrl]);
-
-  // Chart State
-  const [chartSymbol, setChartSymbol] = useState<string>('BTC-USDT-SWAP');
-  const [chartResolution, setChartResolution] = useState<string>('240');
-  const [candles, setCandles] = useState<CandleData[]>([]);
 
   // Log Coins Filter
   const [selectedLogCoins, setSelectedLogCoins] = useState<string[]>(['BTC', 'ETH', 'SOL', 'DOGE', 'LINK']);
