@@ -350,15 +350,24 @@ class TraderBot:
 
     def run_single_iteration(self) -> dict:
         """Execute 1 Iteration Loop across 4H Swing and 15m Sideway Engine."""
-        # Telegram Command Check (Panic Stop)
+        # Telegram Command Check (Panic Stop & Sideway Controls)
         try:
             updates = self.notifier.get_updates()
             for u in updates:
-                text = u.get("message", {}).get("text", "").strip()
+                text = u.get("message", {}).get("text", "").strip().lower()
                 if text == "/panic_stop":
                     self.risk_engine.is_circuit_broken = True
                     self.bot_state = "ERROR"
                     self.notifier.send_panic_alert("Triggered via Telegram /panic_stop command")
+                elif text in ["/sideway_on", "sideway on", "เปิด sideway"]:
+                    res = self.set_sideway_mode(True)
+                    self.notifier.send_message(f"🟢 <b>[TELEGRAM COMMAND] 15m Sideway Mode ENABLED</b>\nState: {res['sideway_state']}\nScanning 15m candles active.")
+                elif text in ["/sideway_off", "sideway off", "ปิด sideway"]:
+                    res = self.set_sideway_mode(False)
+                    self.notifier.send_message(f"🟡 <b>[TELEGRAM COMMAND] 15m Sideway Mode DISABLING</b>\nState: {res['sideway_state']}\nNo new entries. Managing active positions.")
+                elif text in ["/sideway_status", "sideway status"]:
+                    sd_positions = [p for p in self.paper_engine.active_positions.values() if p.get("strategy_type") == "SIDEWAY_15M"]
+                    self.notifier.send_message(f"📊 <b>[SIDEWAY MODE STATUS]</b>\nEnabled: {self.sideway_mode_enabled}\nState: {self.sideway_state}\nActive Sideway Positions: {len(sd_positions)}/2")
         except Exception as e:
             print(f"[TraderBot] Telegram check exception: {e}")
                 
@@ -393,11 +402,12 @@ class TraderBot:
                 "trade_history": self.paper_engine.trade_history[:10]
             }
 
+        opened_symbols_this_iteration = set()
         pair_results = {}
         for sym in self.symbols:
             try:
-                # 1. Evaluate 4H Swing Engine Signal
-                candles_4h = self.client.get_candles(symbol=sym, resolution="4H", limit=300)
+                # 1. Evaluate 4H Swing Engine Signal (Primary Strategy Baseline)
+                candles_4h = self.client.get_candles(symbol=sym, resolution="240", limit=300)
                 if candles_4h:
                     eval_res = self.evaluate_pair_signal(sym, candles_4h)
                     pair_results[sym] = {
@@ -405,7 +415,7 @@ class TraderBot:
                         "eval": eval_res
                     }
                     if eval_res.get("signal") in ["LONG", "SHORT"]:
-                        self.paper_engine.open_position(
+                        open_res = self.paper_engine.open_position(
                             symbol=sym,
                             side=eval_res["signal"],
                             entry_price=eval_res["entry_price"],
@@ -414,15 +424,21 @@ class TraderBot:
                             market_snapshot=eval_res["market_snapshot"],
                             id_prefix=eval_res.get("id_prefix", "SW-")
                         )
-                        self.notifier.send_message(
-                            f"<b>📡 [SWING 4H SIGNAL]</b>\n"
-                            f"Asset: {sym} ({eval_res['signal']})\n"
-                            f"Entry: ${eval_res['entry_price']:,.4f}\n"
-                            f"TP1: ${eval_res['tp1_target']:,.4f} | SL: ${eval_res['sl_price']:,.4f}"
-                        )
+                        if open_res.get("status") == "SUCCESS":
+                            opened_symbols_this_iteration.add(sym)
+                            self.notifier.send_message(
+                                f"<b>📡 [SWING 4H SIGNAL]</b>\n"
+                                f"Asset: {sym} ({eval_res['signal']})\n"
+                                f"Entry: ${eval_res['entry_price']:,.4f}\n"
+                                f"TP1: ${eval_res['tp1_target']:,.4f} | SL: ${eval_res['sl_price']:,.4f}"
+                            )
 
-                # 2. Evaluate 15m Sideway Engine Signal (If Enabled)
+                # 2. Evaluate 15m Sideway Engine Signal (If Enabled and no 4H Swing entry for same symbol)
                 if self.sideway_mode_enabled and self.sideway_state == "ACTIVE":
+                    if sym in opened_symbols_this_iteration or sym in self.paper_engine.active_positions:
+                        # Signal Deduplication Guard: Prioritize 4H Swing, suppress duplicate 15m Sideway entry
+                        continue
+
                     candles_15m = self.client.get_candles(symbol=sym, resolution="15m", limit=50)
                     if candles_15m:
                         closes_15m = [c["close"] for c in candles_15m]

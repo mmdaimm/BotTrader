@@ -969,6 +969,7 @@ export default function Dashboard() {
             <thead>
               <tr style={{ color: '#9ca3af', borderBottom: '1px solid rgba(255, 255, 255, 0.05)', textAlign: 'left' }}>
                 <th style={{ paddingBottom: '6px' }}>Symbol</th>
+                <th style={{ paddingBottom: '6px' }}>Strategy (โหมด)</th>
                 <th style={{ paddingBottom: '6px' }}>Side</th>
                 <th style={{ paddingBottom: '6px' }}>Entry</th>
                 <th style={{ paddingBottom: '6px' }}>Unrealized PnL (กำไร/ขาดทุนเรียลไทม์)</th>
@@ -983,6 +984,7 @@ export default function Dashboard() {
                   runningPositions.map((pos) => {
                     const isLong = pos.side === 'LONG';
                     const isTp1Done = pos.tp1_done ?? false;
+                    const isSideway = pos.strategy_type === 'SIDEWAY_15M' || (pos.id && pos.id.startsWith('SD-'));
                   
                   const item = pairs[pos.symbol];
                   const lastPrice = item?.last_price;
@@ -1003,6 +1005,19 @@ export default function Dashboard() {
                   return (
                     <tr key={pos.id} style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.05)' }}>
                       <td style={{ padding: '6px 0', fontWeight: 'bold' }}>{pos.symbol.split('-')[0]}</td>
+                      <td style={{ padding: '6px 0' }}>
+                        <span style={{
+                          padding: '2px 6px',
+                          borderRadius: '4px',
+                          fontWeight: '700',
+                          fontSize: '9px',
+                          background: isSideway ? 'rgba(168, 85, 247, 0.2)' : 'rgba(59, 130, 246, 0.2)',
+                          border: isSideway ? '1px solid rgba(168, 85, 247, 0.4)' : '1px solid rgba(59, 130, 246, 0.4)',
+                          color: isSideway ? '#c084fc' : '#60a5fa'
+                        }}>
+                          {isSideway ? '🟪 SIDEWAY 15M' : '🔷 SWING 4H'}
+                        </span>
+                      </td>
                       <td style={{ padding: '6px 0' }}>
                         <span style={{
                           padding: '2px 5px',
@@ -1069,7 +1084,7 @@ export default function Dashboard() {
                 })
               ) : (
                 <tr>
-                  <td colSpan={6} style={{ padding: '18px 0', color: '#10b981', textAlign: 'center', fontWeight: '600', background: 'rgba(16, 185, 129, 0.05)', borderRadius: '8px' }}>
+                  <td colSpan={7} style={{ padding: '18px 0', color: '#10b981', textAlign: 'center', fontWeight: '600', background: 'rgba(16, 185, 129, 0.05)', borderRadius: '8px' }}>
                     📡 Ready & Active: Scanning OKX 15m / 4H candles for signal entries... (No active positions)
                   </td>
                 </tr>
