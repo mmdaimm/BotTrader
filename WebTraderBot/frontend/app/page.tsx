@@ -336,6 +336,13 @@ export default function Dashboard() {
     fetchStatus();
   };
 
+  const seedDemoPositions = async () => {
+    const res = await fetch(`${backendUrl}/api/seed-demo-positions`, { method: 'POST' });
+    const resData = await res.json();
+    alert(resData.message);
+    fetchStatus();
+  };
+
   const simTrade = async (symbol: string, side: string) => {
     const res = await fetch(`${backendUrl}/api/sim-buy?symbol=${symbol}&side=${side}`, { method: 'POST' });
     const resData = await res.json();
@@ -582,6 +589,19 @@ export default function Dashboard() {
           }}>
             🛡️ Active Monitoring (30m Loop: Active)
           </div>
+
+          <button onClick={seedDemoPositions} style={{
+            background: 'rgba(168, 85, 247, 0.15)',
+            border: '1px solid rgba(168, 85, 247, 0.4)',
+            color: '#c084fc',
+            padding: '8px 14px',
+            borderRadius: '8px',
+            fontWeight: '700',
+            fontSize: '12px',
+            cursor: 'pointer'
+          }}>
+            🔄 Restore Active Demo Positions
+          </button>
 
           <button onClick={triggerPanic} style={{
             background: 'linear-gradient(135deg, #ff3b69, #dc2626)',
