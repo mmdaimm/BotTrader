@@ -48,13 +48,13 @@ class OKXClient:
     def __init__(self, api_key: str = None, api_secret: str = None, passphrase: str = None, host: str = "https://www.okx.com", simulated: bool = True):
         self.simulated = simulated
         if simulated:
-            self.api_key = api_key or os.getenv("OKX_DEMO_API_KEY", os.getenv("OKX_API_KEY", ""))
-            self.api_secret = api_secret or os.getenv("OKX_DEMO_SECRET_KEY", os.getenv("OKX_API_SECRET", ""))
-            self.passphrase = passphrase or os.getenv("OKX_DEMO_PASSPHRASE", os.getenv("OKX_PASSPHRASE", ""))
+            self.api_key = (api_key or os.getenv("OKX_DEMO_API_KEY", os.getenv("OKX_API_KEY", ""))).strip()
+            self.api_secret = (api_secret or os.getenv("OKX_DEMO_SECRET_KEY", os.getenv("OKX_API_SECRET", ""))).strip()
+            self.passphrase = (passphrase or os.getenv("OKX_DEMO_PASSPHRASE", os.getenv("OKX_PASSPHRASE", ""))).strip()
         else:
-            self.api_key = api_key or os.getenv("OKX_LIVE_API_KEY", os.getenv("OKX_API_KEY", ""))
-            self.api_secret = api_secret or os.getenv("OKX_LIVE_SECRET_KEY", os.getenv("OKX_API_SECRET", ""))
-            self.passphrase = passphrase or os.getenv("OKX_LIVE_PASSPHRASE", os.getenv("OKX_PASSPHRASE", ""))
+            self.api_key = (api_key or os.getenv("OKX_LIVE_API_KEY", os.getenv("OKX_API_KEY", ""))).strip()
+            self.api_secret = (api_secret or os.getenv("OKX_LIVE_SECRET_KEY", os.getenv("OKX_API_SECRET", ""))).strip()
+            self.passphrase = (passphrase or os.getenv("OKX_LIVE_PASSPHRASE", os.getenv("OKX_PASSPHRASE", ""))).strip()
         self.host = host
 
     def _generate_signature(self, timestamp: str, method: str, request_path: str, body: str = "") -> str:
@@ -213,6 +213,20 @@ class OKXClient:
                         "message": data.get("msg", "OKX API error"),
                         "total_equity": None
                     }
+        except urllib.error.HTTPError as e:
+            try:
+                err_body = e.read().decode('utf-8')
+                err_json = json.loads(err_body)
+                msg = f"OKX HTTP {e.code} ({err_json.get('code')}): {err_json.get('msg', e.reason)}"
+            except Exception:
+                msg = f"HTTP {e.code}: {e.reason}"
+            print(f"[OKXClient] HTTPError fetching balance: {msg}")
+            return {
+                "status": "HTTP_ERROR",
+                "simulated": self.simulated,
+                "message": msg,
+                "total_equity": None
+            }
         except Exception as e:
             print(f"[OKXClient] Balance fetch exception: {e}")
             return {
