@@ -330,64 +330,69 @@ class OKXClient:
                 if sl_price and float(sl_price) > 0:
                     algo_item["slTriggerPx"] = f"{float(sl_price):.4f}"
                     algo_item["slOrdPx"] = "-1"
+                    algo_item["slTriggerPxType"] = "last"
                 if tp_price and float(tp_price) > 0:
                     algo_item["tpTriggerPx"] = f"{float(tp_price):.4f}"
                     algo_item["tpOrdPx"] = "-1"
+                    algo_item["tpTriggerPxType"] = "last"
                 if algo_item:
                     payload["attachAlgoOrds"] = [algo_item]
 
-            body = json.dumps(payload)
-            headers = self._get_headers("POST", path, body)
-            req = urllib.request.Request(url, data=body.encode('utf-8'), headers=headers, method="POST")
-            with urllib.request.urlopen(req, timeout=5) as resp:
-                data = json.loads(resp.read().decode())
-                if data.get("code") == "0" and data.get("data"):
-                    order_info = data["data"][0]
-                    return {
-                        "status": "SUCCESS",
-                        "order_id": order_info.get("ordId"),
-                        "symbol": symbol,
-                        "side": side,
-                        "contracts": sz_contracts,
-                        "sl_price": sl_price,
-                        "tp_price": tp_price,
-                        "raw_response": data
-                    }
-                elif data.get("code") in ["51000", "51119", "51008"]:
-                    # Auto-Retry Net Mode Fallback if OKX account is in Net Mode (remove posSide)
-                    payload_net = payload.copy()
-                    payload_net.pop("posSide", None)
-                    body_net = json.dumps(payload_net)
-                    headers_net = self._get_headers("POST", path, body_net)
-                    req_net = urllib.request.Request(url, data=body_net.encode('utf-8'), headers=headers_net, method="POST")
-                    with urllib.request.urlopen(req_net, timeout=5) as resp_net:
-                        data_net = json.loads(resp_net.read().decode())
-                        if data_net.get("code") == "0" and data_net.get("data"):
-                            order_info = data_net["data"][0]
+            def _execute_order(p_dict):
+                b_str = json.dumps(p_dict)
+                hdrs = self._get_headers("POST", path, b_str)
+                req_obj = urllib.request.Request(url, data=b_str.encode('utf-8'), headers=hdrs, method="POST")
+                with urllib.request.urlopen(req_obj, timeout=5) as resp:
+                    d = json.loads(resp.read().decode())
+                    if d.get("code") == "0" and d.get("data"):
+                        info = d["data"][0]
+                        s_code = str(info.get("sCode", "0"))
+                        if s_code == "0":
                             return {
                                 "status": "SUCCESS",
-                                "order_id": order_info.get("ordId"),
+                                "order_id": info.get("ordId"),
                                 "symbol": symbol,
                                 "side": side,
                                 "contracts": sz_contracts,
                                 "sl_price": sl_price,
                                 "tp_price": tp_price,
-                                "raw_response": data_net
+                                "raw_response": d
                             }
                         else:
                             return {
                                 "status": "API_ERROR",
-                                "code": data_net.get("code"),
-                                "message": data_net.get("msg", "OKX Net-mode order failed"),
-                                "raw_response": data_net
+                                "code": s_code,
+                                "message": info.get("sMsg", "Order failed"),
+                                "raw_response": d
                             }
-                else:
                     return {
                         "status": "API_ERROR",
-                        "code": data.get("code"),
-                        "message": data.get("msg", "OKX Order placement failed"),
-                        "raw_response": data
+                        "code": d.get("code"),
+                        "message": d.get("msg", "OKX Order placement failed"),
+                        "raw_response": d
                     }
+
+            # Stage 1: Try Standard Hedge-Mode Order with attached SL/TP (TriggerPxType='last')
+            res1 = _execute_order(payload)
+            if res1.get("status") == "SUCCESS":
+                return res1
+
+            # Stage 2: Net Mode Fallback (remove posSide)
+            payload_net = payload.copy()
+            payload_net.pop("posSide", None)
+            res2 = _execute_order(payload_net)
+            if res2.get("status") == "SUCCESS":
+                return res2
+
+            # Stage 3: Pure Market Order Fallback (remove attachAlgoOrds and posSide)
+            payload_pure = payload.copy()
+            payload_pure.pop("attachAlgoOrds", None)
+            payload_pure.pop("posSide", None)
+            res3 = _execute_order(payload_pure)
+            if res3.get("status") == "SUCCESS":
+                return res3
+
+            return res1
         except Exception as e:
             print(f"[OKXClient] Place order exception: {e}")
             return {"status": "ERROR", "message": str(e)}
