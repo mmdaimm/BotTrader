@@ -48,13 +48,19 @@ class OKXClient:
     def __init__(self, api_key: str = None, api_secret: str = None, passphrase: str = None, host: str = "https://www.okx.com", simulated: bool = True):
         self.simulated = simulated
         if simulated:
-            self.api_key = (api_key or os.getenv("OKX_DEMO_API_KEY", os.getenv("OKX_API_KEY", ""))).strip()
-            self.api_secret = (api_secret or os.getenv("OKX_DEMO_SECRET_KEY", os.getenv("OKX_API_SECRET", ""))).strip()
-            self.passphrase = (passphrase or os.getenv("OKX_DEMO_PASSPHRASE", os.getenv("OKX_PASSPHRASE", ""))).strip()
+            env_key = os.getenv("OKX_DEMO_API_KEY") or os.getenv("OKX_API_KEY") or os.getenv("OKX_KEY") or ""
+            env_secret = os.getenv("OKX_DEMO_SECRET_KEY") or os.getenv("OKX_API_SECRET") or os.getenv("OKX_SECRET") or ""
+            env_passphrase = os.getenv("OKX_DEMO_PASSPHRASE") or os.getenv("OKX_PASSPHRASE") or ""
+            self.api_key = (api_key or env_key).strip()
+            self.api_secret = (api_secret or env_secret).strip()
+            self.passphrase = (passphrase or env_passphrase).strip()
         else:
-            self.api_key = (api_key or os.getenv("OKX_LIVE_API_KEY", os.getenv("OKX_API_KEY", ""))).strip()
-            self.api_secret = (api_secret or os.getenv("OKX_LIVE_SECRET_KEY", os.getenv("OKX_API_SECRET", ""))).strip()
-            self.passphrase = (passphrase or os.getenv("OKX_LIVE_PASSPHRASE", os.getenv("OKX_PASSPHRASE", ""))).strip()
+            env_key = os.getenv("OKX_LIVE_API_KEY") or os.getenv("OKX_API_KEY") or os.getenv("OKX_KEY") or ""
+            env_secret = os.getenv("OKX_LIVE_SECRET_KEY") or os.getenv("OKX_API_SECRET") or os.getenv("OKX_SECRET") or ""
+            env_passphrase = os.getenv("OKX_LIVE_PASSPHRASE") or os.getenv("OKX_PASSPHRASE") or ""
+            self.api_key = (api_key or env_key).strip()
+            self.api_secret = (api_secret or env_secret).strip()
+            self.passphrase = (passphrase or env_passphrase).strip()
         self.host = host
 
     def _generate_signature(self, timestamp: str, method: str, request_path: str, body: str = "") -> str:
