@@ -416,6 +416,29 @@ def get_okx_balance():
     """Fetch live OKX Demo / Real account balance and margin health ratio."""
     return bot.client.get_account_balance()
 
+@app.get("/api/okx/debug-env")
+def debug_okx_env():
+    """Diagnostic endpoint to safely inspect OKX API Key environment variables on Railway."""
+    client = bot.client
+    client._resolve_keys()
+    
+    def mask_str(s):
+        if not s:
+            return "EMPTY (0 chars)"
+        if len(s) <= 6:
+            return f"EXISTS (len={len(s)}, val={s[0]}***{s[-1]})"
+        return f"EXISTS (len={len(s)}, val={s[:3]}***{s[-3:]})"
+
+    okx_raw_envs = {k: mask_str(v) for k, v in os.environ.items() if "OKX" in k.upper() or "DEMO" in k.upper() or "ACCESS" in k.upper()}
+
+    return {
+        "resolved_api_key": mask_str(client.api_key),
+        "resolved_secret_key": mask_str(client.api_secret),
+        "resolved_passphrase": mask_str(client.passphrase),
+        "simulated_mode": client.simulated,
+        "raw_environment_variables_detected": okx_raw_envs
+    }
+
 if __name__ == "__main__":
     import uvicorn
     port = int(os.getenv("PORT", 8080))
