@@ -63,8 +63,26 @@ class OKXClient:
             self.passphrase = (passphrase or env_passphrase).strip()
         self.host = host
 
+    def _resolve_keys(self):
+        """Dynamically resolve environment keys at runtime if empty on boot."""
+        if self.simulated:
+            if not self.api_key:
+                self.api_key = (os.getenv("OKX_DEMO_API_KEY") or os.getenv("OKX_API_KEY") or os.getenv("OKX_KEY") or "").strip()
+            if not self.api_secret:
+                self.api_secret = (os.getenv("OKX_DEMO_SECRET_KEY") or os.getenv("OKX_API_SECRET") or os.getenv("OKX_SECRET") or "").strip()
+            if not self.passphrase:
+                self.passphrase = (os.getenv("OKX_DEMO_PASSPHRASE") or os.getenv("OKX_PASSPHRASE") or "").strip()
+        else:
+            if not self.api_key:
+                self.api_key = (os.getenv("OKX_LIVE_API_KEY") or os.getenv("OKX_API_KEY") or os.getenv("OKX_KEY") or "").strip()
+            if not self.api_secret:
+                self.api_secret = (os.getenv("OKX_LIVE_SECRET_KEY") or os.getenv("OKX_API_SECRET") or os.getenv("OKX_SECRET") or "").strip()
+            if not self.passphrase:
+                self.passphrase = (os.getenv("OKX_LIVE_PASSPHRASE") or os.getenv("OKX_PASSPHRASE") or "").strip()
+
     def _generate_signature(self, timestamp: str, method: str, request_path: str, body: str = "") -> str:
         """Generate OKX API v5 Base64 HMAC-SHA256 signature."""
+        self._resolve_keys()
         message = f"{timestamp}{method.upper()}{request_path}{body}"
         mac = hmac.new(
             self.api_secret.encode('utf-8'),
@@ -74,6 +92,7 @@ class OKXClient:
         return base64.b64encode(mac.digest()).decode('utf-8')
 
     def _get_headers(self, method: str, request_path: str, body: str = "") -> dict:
+        self._resolve_keys()
         timestamp = f"{time.strftime('%Y-%m-%dT%H:%M:%S', time.gmtime())}.{int(time.time() * 1000) % 1000:03d}Z"
         headers = {
             'Content-Type': 'application/json',
@@ -170,6 +189,7 @@ class OKXClient:
 
     def get_account_balance(self) -> dict:
         """Fetch OKX Demo / Live Account Balance & Margin Health."""
+        self._resolve_keys()
         if not self.api_key or not self.api_secret or not self.passphrase:
             return {
                 "status": "UNCONFIGURED_KEY",
