@@ -945,7 +945,7 @@ export default function Dashboard() {
 
       {/* Institutional 80/20 Allocation & Portfolio Summary Grid */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '20px' }}>
-        {/* 80% Weight Funding Rate Arbitrage Engine */}
+        {/* 70% Core Engine: Spot Portfolio Rebalancing */}
         <div style={{
           background: 'rgba(18, 24, 38, 0.75)',
           backdropFilter: 'blur(12px)',
@@ -954,37 +954,37 @@ export default function Dashboard() {
           padding: '20px'
         }}>
           <h2 style={{ fontWeight: '700', fontSize: '14px', marginBottom: '16px', color: '#00f090' }}>
-            🏛️ 80% Funding Arbitrage Engine
+            🏛️ 70% Core Engine (Spot Portfolio Rebalance)
           </h2>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', fontSize: '13px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', paddingBottom: '8px', borderBottom: '1px solid rgba(255, 255, 255, 0.05)' }}>
-              <span style={{ color: '#9ca3af' }}>Allocated Capital (80%)</span>
+              <span style={{ color: '#9ca3af' }}>Allocated Capital (70%)</span>
               <span style={{ fontWeight: '700', color: '#00f090', fontFamily: 'monospace' }}>
-                ${((cashflowSummary?.funding_arbitrage?.allocated_capital) ?? ((okxBalance.total_equity ?? data?.paper_summary?.current_capital ?? 10000.0) * 0.8)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD
+                ${((cashflowSummary?.core_rebalance_70pct?.allocated_capital) ?? ((okxBalance.total_equity ?? 10000.0) * 0.7)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD
               </span>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', paddingBottom: '8px', borderBottom: '1px solid rgba(255, 255, 255, 0.05)' }}>
-              <span style={{ color: '#9ca3af' }}>Annual Funding APY</span>
-              <span style={{ fontWeight: '700', color: '#38bdf8', fontFamily: 'monospace' }}>
-                ~{(cashflowSummary?.funding_arbitrage?.estimated_annual_apy_pct ?? 10.95).toFixed(2)}% APY (OKX Live)
+              <span style={{ color: '#9ca3af' }}>Strategy Architecture</span>
+              <span style={{ fontWeight: '700', color: '#38bdf8' }}>
+                Shannon's Demon (Volatility Harvesting)
               </span>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', paddingBottom: '8px', borderBottom: '1px solid rgba(255, 255, 255, 0.05)' }}>
-              <span style={{ color: '#9ca3af' }}>Est. Daily Cash Flow</span>
+              <span style={{ color: '#9ca3af' }}>Macro Target Weights</span>
               <span style={{ fontWeight: '700', color: '#a855f7' }}>
-                +${(cashflowSummary?.funding_arbitrage?.daily_cashflow_usd ?? (((okxBalance.total_equity ?? 10000.0) * 0.8 * 0.1095) / 365)).toFixed(2)} USD / Day
+                {cashflowSummary?.core_rebalance_70pct?.macro_regime || 'BTC 40% | ETH 30% | USDT 30%'}
               </span>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <span style={{ color: '#9ca3af' }}>Delta-Neutral Shield</span>
+              <span style={{ color: '#9ca3af' }}>Dual-Factor Filter</span>
               <span style={{ fontWeight: '600', color: '#00f090' }}>
-                {cashflowSummary?.funding_arbitrage?.delta_neutral_shield || '🟢 ACTIVE (OKX Live Margin)'}
+                🟢 Drift Threshold &ge; 5.0% + Cost Barrier
               </span>
             </div>
           </div>
         </div>
 
-        {/* 20% Weight 4H Swing Trading Engine */}
+        {/* 30% Satellite Engine: Futures Geometric Grid Trading */}
         <div style={{
           background: 'rgba(18, 24, 38, 0.75)',
           backdropFilter: 'blur(12px)',
@@ -993,23 +993,12 @@ export default function Dashboard() {
           padding: '20px'
         }}>
           <h2 style={{ fontWeight: '700', fontSize: '14px', marginBottom: '16px', color: '#3b82f6' }}>
-            🎯 20% 4H Swing Partial TP Engine
+            🛰️ 30% Satellite Engine (Futures Geometric Grid)
           </h2>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', fontSize: '13px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', paddingBottom: '8px', borderBottom: '1px solid rgba(255, 255, 255, 0.05)' }}>
-              <span style={{ color: '#9ca3af' }}>Allocated Capital (20%)</span>
+              <span style={{ color: '#9ca3af' }}>Allocated Capital (30%)</span>
               <span style={{ fontWeight: '700', color: '#3b82f6', fontFamily: 'monospace' }}>
-                ${((cashflowSummary?.sideway_range_scalper?.allocated_capital) ?? ((okxBalance.total_equity ?? data?.paper_summary?.current_capital ?? 10000.0) * 0.2)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD
-              </span>
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', paddingBottom: '8px', borderBottom: '1px solid rgba(255, 255, 255, 0.05)' }}>
-              <span style={{ color: '#9ca3af' }}>Macro Filter</span>
-              <span style={{ fontWeight: '700', color: '#00f090' }}>Supertrend 10,3.0 + ADX &gt; 20 (OKX Live)</span>
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', paddingBottom: '8px', borderBottom: '1px solid rgba(255, 255, 255, 0.05)' }}>
-              <span style={{ color: '#9ca3af' }}>Partial TP Architecture</span>
-              <span style={{ fontWeight: '700', color: '#f59e0b' }}>TP1 50% @ 1.5x ATR + Breakeven SL</span>
-            </div>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
               <span style={{ color: '#9ca3af' }}>Risk Shield</span>
               <span style={{ fontWeight: '600', color: '#00f090' }}>

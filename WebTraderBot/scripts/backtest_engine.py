@@ -44,7 +44,7 @@ class BacktestEngine:
 
     def fetch_deep_history(self, symbol: str, resolution: str = "4h", days: int = 180) -> List[Dict[str, Any]]:
         global_symbol = SYMBOL_MAP.get(symbol, symbol.replace("-USDT-SWAP", "USDT"))
-        target_count = min(days * 6, 1200)
+        target_count = min(days * 6, 5000)
         all_candles = []
         end_time_ms = None
 
@@ -97,7 +97,7 @@ class BacktestEngine:
             except Exception as e:
                 print(f"[Backtest] Cache load warning for {symbol}: {e}")
 
-        needed_candles = min(days * 6, 1200)
+        needed_candles = min(days * 6, 5000)
 
         if len(cached_data) < needed_candles * 0.8:
             fetched = self.fetch_deep_history(symbol, resolution, days=days)

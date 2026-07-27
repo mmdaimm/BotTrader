@@ -93,3 +93,33 @@ class RiskEngine:
     def reset_circuit_breaker(self):
         self.consecutive_losses = 0
         self.is_circuit_broken = False
+
+    def evaluate_circuit_breakers(self, current_equity: float, peak_equity: float, btc_price: float, btc_ema200_1d: float, adx_4h: float, atr_15m: float, avg_atr_15m: float) -> dict:
+        """
+        Dynamic 3-Level Circuit Breakers Guard Matrix:
+        - Level 1 Guard: ADX(4H) >= 22 OR ATR(15m) > 3x Avg -> Pause Grid Open Orders
+        - Level 2 Guard: BTC < EMA 200 (1D) -> Shift Core Target Allocation to BTC 30% / ETH 20% / USDT 50%
+        - Level 3 Guard: Max Drawdown >= 15% Total Equity (Current Equity <= 0.85 * Peak Equity) -> Hard Cut Loss
+        """
+        level1_grid_pause = (adx_4h >= 22.0) or (avg_atr_15m > 0 and atr_15m > 3.0 * avg_atr_15m)
+        level2_core_shift = (btc_price < btc_ema200_1d)
+        
+        drawdown_pct = 0.0
+        if peak_equity > 0:
+            drawdown_pct = max(0.0, (peak_equity - current_equity) / peak_equity * 100.0)
+            
+        level3_hard_stop = (drawdown_pct >= 15.0)
+        if level3_hard_stop:
+            self.is_circuit_broken = True
+
+        return {
+            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+            "current_equity": round(current_equity, 2),
+            "peak_equity": round(peak_equity, 2),
+            "drawdown_pct": round(drawdown_pct, 2),
+            "level1_grid_pause": level1_grid_pause,
+            "level2_core_shift": level2_core_shift,
+            "level3_hard_stop": level3_hard_stop,
+            "status": "LEVEL_3_HARD_STOP" if level3_hard_stop else ("LEVEL_2_CORE_SHIFT" if level2_core_shift else ("LEVEL_1_GRID_PAUSE" if level1_grid_pause else "ALL_SYSTEMS_NORMAL"))
+        }
+

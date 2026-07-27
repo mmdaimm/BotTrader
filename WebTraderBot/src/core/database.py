@@ -48,6 +48,32 @@ class DatabaseManager:
                 )
             """)
 
+            # Core Portfolio State Table (70% Capital Spot Rebalance)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS core_rebalance_state (
+                    id INTEGER PRIMARY KEY CHECK (id = 1),
+                    v_core REAL NOT NULL DEFAULT 7000.0,
+                    macro_regime TEXT NOT NULL DEFAULT 'NORMAL_BULL',
+                    weights_json TEXT,
+                    last_rebalance_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+
+            # Satellite Grid State Table (30% Capital Futures Geometric Grid)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS satellite_grid_state (
+                    id INTEGER PRIMARY KEY CHECK (id = 1),
+                    grid_type TEXT NOT NULL DEFAULT 'GEOMETRIC',
+                    status TEXT NOT NULL DEFAULT 'ACTIVE',
+                    p_lower REAL NOT NULL DEFAULT 0.0,
+                    p_upper REAL NOT NULL DEFAULT 0.0,
+                    grid_count INTEGER NOT NULL DEFAULT 10,
+                    max_equity REAL NOT NULL DEFAULT 10000.0,
+                    grid_orders_json TEXT,
+                    last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+
             # Migration guard for bot_state_config
             cursor.execute("PRAGMA table_info(bot_state_config)")
             cols = [r[1] for r in cursor.fetchall()]

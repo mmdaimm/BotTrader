@@ -13,6 +13,8 @@ from src.core.telegram_bot import TelegramNotifier
 from src.core.paper_trading import PaperTradingEngine
 from src.core.active_monitor import ActiveMonitor
 from src.core.database import DatabaseManager
+from src.core.rebalance_engine import CoreRebalanceEngine
+from src.core.grid_engine import SatelliteGridEngine
 
 class TraderBot:
     def __init__(self, symbols: list = None, resolution: str = "240", initial_capital: float = 10000.0):
@@ -31,7 +33,12 @@ class TraderBot:
             "ETC-USDT-SWAP",
             "XLM-USDT-SWAP",
             "TRX-USDT-SWAP",
-            "AVAX-USDT-SWAP"
+            "AVAX-USDT-SWAP",
+            "BNB-USDT-SWAP",
+            "NEAR-USDT-SWAP",
+            "UNI-USDT-SWAP",
+            "FIL-USDT-SWAP",
+            "ALGO-USDT-SWAP"
         ]
         self.resolution = resolution  # "240" (4H)
         self.timeframe_str = "4h"
@@ -40,12 +47,19 @@ class TraderBot:
         self.notifier = TelegramNotifier()
         self.db = DatabaseManager()
         
-        # 80/20 Institutional Capital Allocation
+        # 70/30 Production-Grade Core-Satellite Capital Allocation
         self.initial_capital = initial_capital
-        self.funding_capital_80 = initial_capital * 0.80  # 80% Weight ($8,000)
-        self.swing_capital_20 = initial_capital * 0.20   # 20% Weight ($2,000)
+        self.core_capital_70 = initial_capital * 0.70       # 70% Core Weight ($7,000)
+        self.satellite_capital_30 = initial_capital * 0.30  # 30% Satellite Weight ($3,000)
         
-        self.paper_engine = PaperTradingEngine(initial_capital=self.swing_capital_20)
+        self.rebalance_engine = CoreRebalanceEngine(client=self.client)
+        self.grid_engine = SatelliteGridEngine()
+        self.peak_equity = initial_capital
+        
+        self.funding_capital_80 = self.core_capital_70
+        self.swing_capital_20 = self.satellite_capital_30
+        
+        self.paper_engine = PaperTradingEngine(initial_capital=self.satellite_capital_30)
         self.active_monitor = ActiveMonitor(self.client, self.paper_engine, notifier=self.notifier)
         self.trading_mode = "PAPER"  # "PAPER" or "LIVE"
         self.bot_state = "RUNNING"   # "RUNNING", "PAUSED", "ERROR"
@@ -540,12 +554,44 @@ class TraderBot:
             except Exception as e:
                 print(f"[TraderBot] Error running Active Monitoring scan: {e}")
 
-        btc_price = pair_results.get("BTC-USDT-SWAP", {}).get("last_price", 0.0)
+        btc_price = pair_results.get("BTC-USDT-SWAP", {}).get("last_price", 65000.0)
+        eth_price = pair_results.get("ETH-USDT-SWAP", {}).get("last_price", 1950.0)
+        btc_eval = pair_results.get("BTC-USDT-SWAP", {}).get("eval", {}).get("market_snapshot", {})
+        btc_ema200_1d = btc_eval.get("ema200_4h", 63000.0)
+        adx_4h = btc_eval.get("adx", 19.0)
+        atr_4h = btc_eval.get("atr_4h", 450.0)
+        
+        # 1. Run Core Spot Rebalance Process (70% Capital Allocation)
+        btc_qty = (self.core_capital_70 * 0.40) / btc_price if btc_price > 0 else 0.04
+        eth_qty = (self.core_capital_70 * 0.30) / eth_price if eth_price > 0 else 1.0
+        usdt_cash = self.core_capital_70 * 0.30
+        
+        rebalance_telemetry = self.rebalance_engine.process_rebalance(
+            btc_qty, btc_price, eth_qty, eth_price, usdt_cash, btc_ema200_1d
+        )
+        
+        # 2. Run Satellite Futures Grid Process (30% Capital Allocation)
+        bb_lower = btc_price * 0.97
+        bb_upper = btc_price * 1.03
+        atr_15m = atr_4h * 0.35
+        p_lower, p_upper, grid_n = self.grid_engine.determine_grid_bounds_and_density(bb_lower, bb_upper, atr_15m)
+        grid_config = self.grid_engine.calculate_geometric_grid(p_lower, p_upper, grid_n)
+        oob_eval = self.grid_engine.evaluate_out_of_bounds("BTC-USDT-SWAP", btc_price, p_lower, p_upper, adx_4h, atr_4h)
+        
+        # 3. Evaluate Dynamic 3-Level Circuit Breakers & Peak Drawdown Tracker
+        current_total_equity = rebalance_telemetry["v_core"] + self.paper_engine.current_capital
+        if current_total_equity > self.peak_equity:
+            self.peak_equity = current_total_equity
+            
+        cb_eval = self.risk_engine.evaluate_circuit_breakers(
+            current_total_equity, self.peak_equity, btc_price, btc_ema200_1d, adx_4h, atr_15m, atr_15m
+        )
+
         paper_summary = self.paper_engine.get_summary()
         
         return {
             "status": "OK",
-            "bot_state": "RUNNING",
+            "bot_state": "RUNNING" if not cb_eval["level3_hard_stop"] else "ERROR",
             "trading_mode": self.trading_mode,
             "sideway_mode_enabled": self.sideway_mode_enabled,
             "sideway_state": self.sideway_state,
@@ -555,17 +601,31 @@ class TraderBot:
             "last_price": btc_price,
             "pair_results": pair_results,
             "paper_summary": paper_summary,
-            "institutional_allocation": {
-                "funding_rate_arbitrage_80pct": {
-                    "allocated_capital_usd": self.funding_capital_80,
-                    "estimated_annual_apy_pct": 15.33,
-                    "status": "ACTIVE (Delta-Neutral 1x Spot + 1x Short)"
+            "core_satellite_architecture": {
+                "architecture": "Production-Grade Core-Satellite (70% Spot Rebalance + 30% Futures Grid)",
+                "total_equity_usd": round(current_total_equity, 2),
+                "peak_equity_usd": round(self.peak_equity, 2),
+                "drawdown_pct": cb_eval["drawdown_pct"],
+                "core_engine_70pct": {
+                    "strategy": "Spot Volatility Harvesting (Shannon's Demon)",
+                    "allocated_capital_usd": self.core_capital_70,
+                    "v_core_value_usd": rebalance_telemetry["v_core"],
+                    "macro_regime": rebalance_telemetry["macro_regime"],
+                    "current_weights": rebalance_telemetry["current_weights"],
+                    "target_weights": rebalance_telemetry["target_weights"],
+                    "rebalance_actions": rebalance_telemetry["rebalance_actions"]
                 },
-                "swing_engine_20pct": {
-                    "allocated_capital_usd": self.swing_capital_20,
-                    "current_capital_usd": self.paper_engine.current_capital,
-                    "status": "ACTIVE (4H Swing + 15m Sideway Engine)"
-                }
+                "satellite_engine_30pct": {
+                    "strategy": "Futures Geometric Grid (Bollinger Bands 20,2 4H)",
+                    "allocated_capital_usd": self.satellite_capital_30,
+                    "grid_type": "GEOMETRIC",
+                    "grid_status": grid_config["status"],
+                    "grid_ratio_r": grid_config.get("ratio_r"),
+                    "g_profit_pct": grid_config.get("g_profit_pct"),
+                    "bounds": {"p_lower": p_lower, "p_upper": p_upper, "grid_count": grid_n},
+                    "out_of_bounds_status": oob_eval
+                },
+                "circuit_breaker_3level": cb_eval
             },
             "active_positions": list(self.paper_engine.active_positions.values()),
             "trade_history": self.paper_engine.trade_history[:10]
