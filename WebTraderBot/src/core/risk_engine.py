@@ -3,6 +3,8 @@ Risk Management Engine for OKX Futures
 Position Sizing Calculator, Dynamic ATR SL/TP (LONG & SHORT), Trailing Stop, Breakeven SL, Isolated Margin.
 """
 
+import time
+
 class RiskEngine:
     def __init__(self, max_risk_per_trade_pct: float = 0.015, okx_fee_pct: float = 0.0005, leverage: int = 3, max_consecutive_losses: int = 3):
         self.max_risk_pct = max_risk_per_trade_pct
