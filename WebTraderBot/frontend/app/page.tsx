@@ -267,7 +267,7 @@ export default function Dashboard() {
       if (coinLogParts.length > 0) {
         setLogs((prev) => [
           ...prev.slice(-18),
-          `[${now}] State: ${result.bot_state || result.status} | 4H Swing | ${coinLogParts.join(' | ')}`
+          `[${now}] State: ${result.bot_state || result.status} | Core-Satellite | ${coinLogParts.join(' | ')}`
         ]);
       }
     } catch (err) {
@@ -499,7 +499,7 @@ export default function Dashboard() {
           </div>
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <h1 style={{ fontSize: '20px', fontWeight: '700', margin: 0 }}>WebTraderBot — Institutional 80/20 Terminal</h1>
+              <h1 style={{ fontSize: '20px', fontWeight: '700', margin: 0 }}>WebTraderBot — Core-Satellite Production Engine</h1>
               
               {/* Glowing Bot Status Indicator Dot */}
               <div style={{
@@ -524,7 +524,7 @@ export default function Dashboard() {
                 {botState === 'RUNNING' || botState === 'OK' ? 'RUNNING LIVE' : (botState === 'PAUSED' ? 'PAUSED' : 'REBUILDING...')}
               </div>
             </div>
-            <p style={{ fontSize: '12px', color: '#9ca3af', margin: 0 }}>OKX Swaps (80% Delta-Neutral Arbitrage + 20% 4H Swing Partial TP Machine)</p>
+            <p style={{ fontSize: '12px', color: '#9ca3af', margin: 0 }}>OKX Spot &amp; Futures (70% Core Spot Rebalancing + 30% Satellite Futures Grid Engine)</p>
           </div>
         </div>
 
