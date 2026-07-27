@@ -999,10 +999,21 @@ export default function Dashboard() {
             <div style={{ display: 'flex', justifyContent: 'space-between', paddingBottom: '8px', borderBottom: '1px solid rgba(255, 255, 255, 0.05)' }}>
               <span style={{ color: '#9ca3af' }}>Allocated Capital (30%)</span>
               <span style={{ fontWeight: '700', color: '#3b82f6', fontFamily: 'monospace' }}>
+                ${((cashflowSummary?.satellite_grid_30pct?.allocated_capital) ?? ((okxBalance.total_equity ?? 10000.0) * 0.3)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD
+              </span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', paddingBottom: '8px', borderBottom: '1px solid rgba(255, 255, 255, 0.05)' }}>
+              <span style={{ color: '#9ca3af' }}>Grid Range &amp; Spacing</span>
+              <span style={{ fontWeight: '700', color: '#00f090' }}>Bollinger Bands (20,2 4H) + 1.5x ATR 15m</span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', paddingBottom: '8px', borderBottom: '1px solid rgba(255, 255, 255, 0.05)' }}>
+              <span style={{ color: '#9ca3af' }}>Profit / Grid Barrier</span>
+              <span style={{ fontWeight: '700', color: '#f59e0b' }}>G_profit &ge; 0.3% (Fee Protection)</span>
+            </div>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <span style={{ color: '#9ca3af' }}>Risk Shield</span>
+              <span style={{ color: '#9ca3af' }}>Regime Trend Guard</span>
               <span style={{ fontWeight: '600', color: '#00f090' }}>
-                {cashflowSummary?.sideway_range_scalper?.risk_shield || '🟢 8h Cooldown + OKX Live Heat Guard'}
+                🟢 Active when ADX (4H) &lt; 22 (Sideway Regime)
               </span>
             </div>
           </div>
