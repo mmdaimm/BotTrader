@@ -527,14 +527,71 @@ def debug_okx_env():
     }
 
 @app.get("/api/okx/test-order")
-def test_okx_order(symbol: str = "AVAX-USDT-SWAP"):
+def test_okx_order(symbol: str = "UNI-USDT-SWAP"):
     """Live diagnostic endpoint to test OKX Demo API order placement and capture exact raw OKX API responses."""
     client = bot.client
-    res = client.place_market_order(symbol, "LONG", 250.0, sl_price=6.526, tp_price=6.986)
+    res = client.place_market_order(symbol, "LONG", 1.0, sl_price=3.78, tp_price=4.18)
     return {
         "symbol": symbol,
         "result": res
     }
+
+@app.get("/api/trigger-test-order")
+def trigger_test_order(symbol: str = Query("UNI-USDT-SWAP"), side: str = Query("LONG"), sz: float = Query(1.0)):
+    """
+    Trigger a REAL order execution test on OKX Demo Account (x-simulated-trading: 1).
+    Places order directly via OKX API v5 and records position on PaperTradingEngine.
+    """
+    try:
+        # 1. Fetch current market price
+        candles = bot.client.get_candles(symbol=symbol, resolution="240", limit=10)
+        current_price = candles[-1]["close"] if candles else 3.984
+        
+        p_lower = round(current_price * 0.95, 4)
+        p_upper = round(current_price * 1.05, 4)
+
+        # 2. Execute order on OKX Demo API
+        okx_res = bot.client.place_market_order(
+            symbol=symbol,
+            side=side,
+            sz=sz,
+            sl_price=p_lower,
+            tp_price=p_upper
+        )
+        
+        # 3. Record position on Paper Trading Engine
+        risk_params = {
+            "position_qty": sz,
+            "sl_price": p_lower,
+            "tp_price": p_upper
+        }
+        paper_res = bot.paper_engine.open_position(
+            symbol=symbol,
+            entry_price=current_price,
+            risk_params=risk_params,
+            side=side,
+            market_snapshot={"strategy_type": "GEOMETRIC_GRID_FUTURES", "p_lower": p_lower, "p_upper": p_upper}
+        )
+
+        # 4. Telegram Notification
+        bot.notifier.send_message(
+            f"<b>🚀 [OKX DEMO GRID ORDER EXECUTED]</b>\n"
+            f"Asset: <b>{symbol}</b> ({side})\n"
+            f"Entry Price: ${current_price:,.4f}\n"
+            f"SL: ${p_lower:,.4f} | TP: ${p_upper:,.4f}\n"
+            f"OKX Status: {okx_res.get('status')}"
+        )
+
+        return {
+            "status": "SUCCESS",
+            "symbol": symbol,
+            "side": side,
+            "current_price": current_price,
+            "okx_demo_response": okx_res,
+            "paper_engine_response": paper_res
+        }
+    except Exception as e:
+        return {"status": "ERROR", "message": str(e)}
 
 if __name__ == "__main__":
     import uvicorn
