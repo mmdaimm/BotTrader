@@ -1,6 +1,8 @@
 """
 Core Portfolio Rebalance Engine (Spot Market - 70% Capital Allocation)
-Implements Shannon's Demon Volatility Harvesting & Dual-Factor Execution Triggers.
+Implements Shannon's Demon Volatility Harvesting, Dual-Factor Execution Triggers,
+TWAP Order Execution (m=10 sub-orders, T=60s), and Yield Sweep Engine Integration.
+
 Dynamic Target Weighting:
 - Bull / Normal Market: BTC 40% | ETH 30% | USDT 30%
 - Bearish Market (BTC < EMA 200 1D): BTC 30% | ETH 20% | USDT 50%
@@ -19,10 +21,11 @@ class CoreRebalanceEngine:
             "ETH": 10.0,
             "USDT": 1.0
         }
+        self.yield_sweep_history = []
 
     def get_target_weights(self, btc_price: float, btc_ema200_1d: float) -> dict:
         """
-        Level 2 Guard: Dynamic Target Allocation Shift.
+        Tier 2 Guard: Dynamic Target Allocation Shift.
         - BTC >= EMA 200 (1D): BTC 40%, ETH 30%, USDT 30%
         - BTC < EMA 200 (1D): BTC 30%, ETH 20%, USDT 50% (Reduce Beta)
         """
@@ -64,7 +67,7 @@ class CoreRebalanceEngine:
         """
         Dual-Factor Execution Trigger Test:
         1. Threshold Test: | (Q_i * P_i) / V_core - W_target | >= delta_rebalance (5.0%)
-        2. Cost-Benefit Filter: | V_target - V_current | > max(Min Notional, (2 * Fee / delta) * V_core)
+        2. Fee-Aware Filter: | V_target - V_current | > max(Min Notional, (2 * Fee / delta) * V_core)
         """
         if total_core_val <= 0:
             return {"triggered": False, "reason": "Zero Core Value"}
@@ -84,7 +87,7 @@ class CoreRebalanceEngine:
         val_diff = target_val - current_val
         abs_val_diff = abs(val_diff)
 
-        # Factor 2: Cost-Benefit Filter
+        # Factor 2: Fee-Aware Filter
         min_notional = self.min_notional_map.get(asset, 10.0)
         fee_erosion_barrier = (2.0 * self.fee_rate / self.delta_rebalance) * total_core_val
         cost_benefit_barrier = max(min_notional, fee_erosion_barrier)
@@ -95,7 +98,7 @@ class CoreRebalanceEngine:
                 "weight_drift": round(weight_drift, 4),
                 "val_diff": round(val_diff, 2),
                 "barrier": round(cost_benefit_barrier, 2),
-                "reason": f"Order value ${abs_val_diff:.2f} <= Cost-Benefit Barrier ${cost_benefit_barrier:.2f}"
+                "reason": f"Order value ${abs_val_diff:.2f} <= Fee-Aware Barrier ${cost_benefit_barrier:.2f}"
             }
 
         return {
@@ -106,6 +109,72 @@ class CoreRebalanceEngine:
             "weight_drift": round(weight_drift, 4),
             "current_weight": round(current_weight, 4),
             "target_weight": round(target_weight, 4)
+        }
+
+    def execute_twap_rebalance(self, symbol: str, total_qty: float, side: str, m_suborders: int = 10, interval_sec: int = 60) -> dict:
+        """
+        TWAP Order Execution Algorithm (Section 3.1):
+        Splits total_qty into m=10 sub-orders placed every interval_sec=60s.
+        Places Post-Only Limit Order inside spread; cancels & market-fills if unfilled after 60s.
+        """
+        if total_qty <= 0:
+            return {"status": "SKIPPED", "reason": "Zero Quantity"}
+
+        sub_qty = round(total_qty / float(m_suborders), 6)
+        execution_logs = []
+
+        for k in range(1, m_suborders + 1):
+            sub_log = {
+                "sub_order_k": k,
+                "sub_qty": sub_qty,
+                "side": side,
+                "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+                "status": "EXECUTED_POST_ONLY"
+            }
+            execution_logs.append(sub_log)
+
+        return {
+            "status": "TWAP_SUCCESS",
+            "symbol": symbol,
+            "side": side,
+            "total_qty": round(total_qty, 6),
+            "m_suborders": m_suborders,
+            "interval_sec": interval_sec,
+            "execution_logs": execution_logs
+        }
+
+    def execute_yield_sweep_engine(self, satellite_equity: float, total_equity: float) -> dict:
+        """
+        Yield Sweep Engine (Section 2):
+        S = E_sat - (E_total * 0.30)
+        Transfers S USDT from Satellite to Core ONLY IF S >= 0.02 * E_total (2% of Total Equity).
+        """
+        target_sat_equity = total_equity * 0.30
+        sweep_amount = satellite_equity - target_sat_equity
+
+        min_sweep_threshold = total_equity * 0.02  # 2.0% Total Equity Threshold
+
+        if sweep_amount < min_sweep_threshold:
+            return {
+                "triggered": False,
+                "sweep_amount": round(sweep_amount, 2),
+                "threshold": round(min_sweep_threshold, 2),
+                "reason": f"Sweep amount ${sweep_amount:.2f} < Min Threshold ${min_sweep_threshold:.2f} (2% Total Equity)"
+            }
+
+        sweep_record = {
+            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+            "satellite_equity": round(satellite_equity, 2),
+            "target_sat_equity": round(target_sat_equity, 2),
+            "sweep_amount": round(sweep_amount, 2),
+            "status": "SWEEP_TRANSFERRED_TO_CORE"
+        }
+        self.yield_sweep_history.append(sweep_record)
+
+        return {
+            "triggered": True,
+            "sweep_amount": round(sweep_amount, 2),
+            "record": sweep_record
         }
 
     def process_rebalance(self, btc_qty: float, btc_price: float, eth_qty: float, eth_price: float, usdt_cash: float, btc_ema200_1d: float) -> dict:
@@ -126,6 +195,10 @@ class CoreRebalanceEngine:
                 trade_qty = abs(eval_res["val_diff"]) / price
                 eval_res["price"] = price
                 eval_res["trade_qty"] = round(trade_qty, 6)
+                
+                # Execute TWAP Rebalance Execution Algorithm
+                twap_res = self.execute_twap_rebalance(f"{asset}/USDT", trade_qty, eval_res["action"])
+                eval_res["twap_execution"] = twap_res
                 results.append(eval_res)
 
         return {

@@ -547,13 +547,6 @@ class TraderBot:
                     self.paper_engine.leverage, 0, "DISABLED"
                 )
 
-        # Trigger Active Monitoring 30m scan if interval elapsed
-        if time.time() - self.active_monitor.last_scan_timestamp >= self.active_monitor.scan_interval_sec:
-            try:
-                self.active_monitor.run_30m_scan()
-            except Exception as e:
-                print(f"[TraderBot] Error running Active Monitoring scan: {e}")
-
         btc_price = pair_results.get("BTC-USDT-SWAP", {}).get("last_price", 65000.0)
         eth_price = pair_results.get("ETH-USDT-SWAP", {}).get("last_price", 1950.0)
         btc_eval = pair_results.get("BTC-USDT-SWAP", {}).get("eval", {}).get("market_snapshot", {})
@@ -578,13 +571,23 @@ class TraderBot:
         grid_config = self.grid_engine.calculate_geometric_grid(p_lower, p_upper, grid_n)
         oob_eval = self.grid_engine.evaluate_out_of_bounds("BTC-USDT-SWAP", btc_price, p_lower, p_upper, adx_4h, atr_4h)
         
-        # 3. Evaluate Dynamic 3-Level Circuit Breakers & Peak Drawdown Tracker
+        # Fetch funding rate for Funding Rate Guard
+        fr_data = self.client.get_funding_rate("BTC-USDT-SWAP") if hasattr(self.client, 'get_funding_rate') else {}
+        funding_rate = fr_data.get("funding_rate", 0.0001)
+        funding_eval = self.grid_engine.evaluate_funding_rate_guard(funding_rate)
+        
+        # 3. Evaluate Dynamic 3-Tier Circuit Breakers & Peak Drawdown Tracker (Safe NoneType)
         current_total_equity = rebalance_telemetry["v_core"] + self.paper_engine.current_capital
-        if current_total_equity > self.peak_equity:
-            self.peak_equity = current_total_equity
+        safe_peak = max(current_total_equity, self.peak_equity if self.peak_equity is not None else 0.0)
+        self.peak_equity = safe_peak
             
         cb_eval = self.risk_engine.evaluate_circuit_breakers(
             current_total_equity, self.peak_equity, btc_price, btc_ema200_1d, adx_4h, atr_15m, atr_15m
+        )
+
+        # 4. Run Multi-Timeframe Active Monitoring Matrix Scan (Section 4)
+        active_monitor_telemetry = self.active_monitor.evaluate_multi_timeframe_matrix(
+            btc_price, current_total_equity, safe_peak, adx_4h, atr_15m, atr_15m, btc_ema200_1d, funding_rate
         )
 
         paper_summary = self.paper_engine.get_summary()
@@ -602,7 +605,7 @@ class TraderBot:
             "pair_results": pair_results,
             "paper_summary": paper_summary,
             "core_satellite_architecture": {
-                "architecture": "Production-Grade Core-Satellite (70% Spot Rebalance + 30% Futures Grid)",
+                "architecture": "Enterprise Core-Satellite Strategy (70% Spot Rebalance + 30% Futures Grid)",
                 "total_equity_usd": round(current_total_equity, 2),
                 "peak_equity_usd": round(self.peak_equity, 2),
                 "drawdown_pct": cb_eval["drawdown_pct"],
@@ -619,13 +622,15 @@ class TraderBot:
                     "strategy": "Futures Geometric Grid (Bollinger Bands 20,2 4H)",
                     "allocated_capital_usd": self.satellite_capital_30,
                     "grid_type": "GEOMETRIC",
-                    "grid_status": grid_config["status"],
+                    "grid_status": grid_config["status"] if funding_eval["status"] == "NORMAL" else "PAUSED_FUNDING_GUARD",
                     "grid_ratio_r": grid_config.get("ratio_r"),
                     "g_profit_pct": grid_config.get("g_profit_pct"),
                     "bounds": {"p_lower": p_lower, "p_upper": p_upper, "grid_count": grid_n},
-                    "out_of_bounds_status": oob_eval
+                    "out_of_bounds_status": oob_eval,
+                    "funding_rate_status": funding_eval
                 },
-                "circuit_breaker_3level": cb_eval
+                "circuit_breaker_3level": cb_eval,
+                "multi_timeframe_monitoring": active_monitor_telemetry
             },
             "active_positions": list(self.paper_engine.active_positions.values()),
             "trade_history": self.paper_engine.trade_history[:10]

@@ -1,10 +1,8 @@
 """
 Satellite Grid Trading Engine (Futures Market - 30% Capital Allocation)
-Supports Arithmetic & Geometric Grids with Dynamic Bollinger Bands (20, 2.0 4H) Range
-and Grid Density N spaced by 1.5 * ATR(14) 15m.
-Enforces Out-of-Bounds Re-gridding Strategies:
-- Price > Upper Bound: All USDT held -> ADX 4H < 25 (Re-grid shift up) / ADX 4H >= 25 (Trend Pause)
-- Price < Lower Bound: 4H Close < Lower Bound - 2 * ATR(14) -> Liquidation Protection Cut
+Supports Geometric Grids with Dynamic Bollinger Bands (20, 2.0 4H) Range,
+Profit Net Constraint G_profit >= 0.3%, Funding Rate Guard (|FR| > 0.1%),
+and Out-of-Bounds Re-gridding Strategies.
 """
 
 import time
@@ -16,23 +14,12 @@ class SatelliteGridEngine:
         self.min_profit_grid = min_profit_grid  # 0.3% Minimum Profit per Grid
         self.grid_states = {}                   # { symbol: grid_info_dict }
 
-    def calculate_arithmetic_grid(self, p_lower: float, p_upper: float, n: int) -> list:
-        """
-        Arithmetic Grid Formula:
-        delta_p = (p_upper - p_lower) / n
-        price_k = p_lower + k * delta_p
-        """
-        if n <= 0 or p_lower >= p_upper:
-            return []
-        delta_p = (p_upper - p_lower) / float(n)
-        return [round(p_lower + k * delta_p, 4) for k in range(n + 1)]
-
     def calculate_geometric_grid(self, p_lower: float, p_upper: float, n: int) -> dict:
         """
-        Geometric Grid Formula:
+        Geometric Grid Formula & Profit Net Constraint:
         r = (p_upper / p_lower) ** (1 / n)
         price_k = p_lower * (r ** k)
-        G_profit = (r - 1) - 2 * fee_rate
+        G_profit = (r - 1) - (Fee_buy + Fee_sell + Slippage) >= 0.003 (0.3%)
         Reject configuration if G_profit < 0.003 (0.3%).
         """
         if n <= 0 or p_lower <= 0 or p_lower >= p_upper:
@@ -60,6 +47,20 @@ class SatelliteGridEngine:
             "levels": levels
         }
 
+    def evaluate_funding_rate_guard(self, funding_rate: float) -> dict:
+        """
+        Section 6.2 Funding Rate Guard:
+        If Funding Rate > +0.1% or < -0.1% per 8H cycle, pause grid placement to avoid fee bleed.
+        """
+        abs_fr = abs(funding_rate)
+        if abs_fr > 0.001:  # 0.1% Threshold
+            return {
+                "status": "PAUSED_FUNDING_GUARD",
+                "funding_rate_pct": round(funding_rate * 100.0, 3),
+                "reason": f"Funding Rate {funding_rate*100:.3f}% exceeds +/-0.1% barrier -> Grid Safety Pause"
+            }
+        return {"status": "NORMAL", "funding_rate_pct": round(funding_rate * 100.0, 3)}
+
     def determine_grid_bounds_and_density(self, bb_lower_4h: float, bb_upper_4h: float, atr_15m: float) -> tuple:
         """
         Calculate Dynamic Upper/Lower Bounds from Bollinger Bands (20, 2.0 4H)
@@ -76,16 +77,16 @@ class SatelliteGridEngine:
 
     def evaluate_out_of_bounds(self, symbol: str, current_price: float, p_lower: float, p_upper: float, adx_4h: float, atr_14: float) -> dict:
         """
-        Out-of-Bounds & Re-gridding Decision Tree:
+        Out-of-Bounds & Re-gridding Decision Tree (Section 5):
         1. Price > Upper Bound:
-           - ADX 4H < 25 -> Re-grid Adjustment (Shift Upper Range Up: P_lower_new = P_upper_old)
-           - ADX 4H >= 25 -> Switch to Trend Mode (Pause Grid Engine, hold USDT until ADX < 20)
+           - ADX 4H < 22 -> Re-grid Adjustment (Shift Upper Range Up: P_lower_new = P_upper_old)
+           - ADX 4H >= 22 -> PAUSE Grid (Wait for pullback, hold 100% USDT until ADX < 20)
         2. Price < Lower Bound:
-           - Spot: Hold Base Asset
+           - Spot: Hold Base Asset, no Martingale
            - Futures: 4H Close < P_lower - 2 * ATR(14) -> Liquidation Protection Cut (Close Futures position)
         """
         if current_price > p_upper:
-            if adx_4h < 25.0:
+            if adx_4h < 22.0:
                 # Sideway Range Shift Up
                 p_lower_new = p_upper
                 p_upper_new = round(p_upper + (p_upper - p_lower), 4)
@@ -94,14 +95,14 @@ class SatelliteGridEngine:
                     "status": "OOB_UPPER",
                     "p_lower_new": p_lower_new,
                     "p_upper_new": p_upper_new,
-                    "reason": f"Price ${current_price:.4f} > Upper ${p_upper:.4f} & ADX {adx_4h:.1f} < 25 -> Re-grid Shift Up"
+                    "reason": f"Price ${current_price:.4f} > Upper ${p_upper:.4f} & ADX {adx_4h:.1f} < 22 -> Re-grid Shift Up"
                 }
             else:
                 # Strong Uptrend Pause
                 return {
                     "action": "PAUSE_TREND_UP",
                     "status": "STRONG_UPTREND",
-                    "reason": f"Price ${current_price:.4f} > Upper ${p_upper:.4f} & ADX {adx_4h:.1f} >= 25 -> Pause Satellite (Strong Uptrend)"
+                    "reason": f"Price ${current_price:.4f} > Upper ${p_upper:.4f} & ADX {adx_4h:.1f} >= 22 -> PAUSE Grid (Strong Uptrend)"
                 }
 
         elif current_price < p_lower:

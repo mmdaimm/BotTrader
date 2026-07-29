@@ -1,6 +1,7 @@
 """
 Risk Management Engine for OKX Futures
-Position Sizing Calculator, Dynamic ATR SL/TP (LONG & SHORT), Trailing Stop, Breakeven SL, Isolated Margin.
+Position Sizing Calculator, Dynamic ATR SL/TP (LONG & SHORT), Trailing Stop, Breakeven SL, Isolated Margin,
+and Peak-to-Trough Drawdown Circuit Breakers.
 """
 
 import time
@@ -15,10 +16,6 @@ class RiskEngine:
         self.is_circuit_broken = False
 
     def calculate_position_sizing(self, capital: float, entry_price: float, atr_val: float, side: str = "LONG", sl_multiplier: float = 1.5, tp_multiplier: float = 2.25) -> dict:
-        """
-        Calculate position size and dynamic ATR SL/TP levels for LONG and SHORT trades.
-        TP Multiplier set to 2.25x ATR for R:R = 1 : 1.5 ratio to eliminate fee drag.
-        """
         sl_distance = sl_multiplier * atr_val
         tp_distance = tp_multiplier * atr_val
         
@@ -56,28 +53,21 @@ class RiskEngine:
         }
 
     def update_trailing_stop(self, pos: dict, current_price: float) -> dict:
-        """
-        Trailing Stop Engine: Dynamically updates Stop Loss to lock in profits as market moves favorably.
-        """
         side = pos.get("side", "LONG")
         entry = pos["entry_price"]
         sl = pos["sl_price"]
         
         if side == "LONG":
-            # If price moves up by 1.0%, move SL to Breakeven (entry price)
             if current_price >= entry * 1.01 and sl < entry:
                 pos["sl_price"] = round(entry, 4)
                 pos["trailing_active"] = True
-            # Trailing SL follows price up at a 1.0% distance
             new_sl = round(current_price * 0.99, 4)
             if pos.get("trailing_active") and new_sl > pos["sl_price"]:
                 pos["sl_price"] = new_sl
         else: # SHORT
-            # If price drops down by 1.0%, move SL to Breakeven (entry price)
             if current_price <= entry * 0.99 and sl > entry:
                 pos["sl_price"] = round(entry, 4)
                 pos["trailing_active"] = True
-            # Trailing SL follows price down at a 1.0% distance
             new_sl = round(current_price * 1.01, 4)
             if pos.get("trailing_active") and new_sl < pos["sl_price"]:
                 pos["sl_price"] = new_sl
@@ -98,17 +88,20 @@ class RiskEngine:
 
     def evaluate_circuit_breakers(self, current_equity: float, peak_equity: float, btc_price: float, btc_ema200_1d: float, adx_4h: float, atr_15m: float, avg_atr_15m: float) -> dict:
         """
-        Dynamic 3-Level Circuit Breakers Guard Matrix:
-        - Level 1 Guard: ADX(4H) >= 22 OR ATR(15m) > 3x Avg -> Pause Grid Open Orders
-        - Level 2 Guard: BTC < EMA 200 (1D) -> Shift Core Target Allocation to BTC 30% / ETH 20% / USDT 50%
-        - Level 3 Guard: Max Drawdown >= 15% Total Equity (Current Equity <= 0.85 * Peak Equity) -> Hard Cut Loss
+        Dynamic 3-Tier Circuit Breakers Guard Matrix:
+        - Tier 1 Guard: ADX(4H) >= 22 OR ATR(15m) > 3x Avg -> Pause Grid Open Orders
+        - Tier 2 Guard: BTC < EMA 200 (1D) -> Shift Core Target Allocation to BTC 30% / ETH 20% / USDT 50%
+        - Tier 3 Guard: Max Drawdown >= 15% Total Equity (Current Equity <= 0.85 * Peak Equity) -> Hard Cut Loss
         """
+        # Safe Peak Equity Evaluation
+        safe_peak = max(current_equity, peak_equity if peak_equity is not None else 0.0)
+
         level1_grid_pause = (adx_4h >= 22.0) or (avg_atr_15m > 0 and atr_15m > 3.0 * avg_atr_15m)
         level2_core_shift = (btc_price < btc_ema200_1d)
         
         drawdown_pct = 0.0
-        if peak_equity > 0:
-            drawdown_pct = max(0.0, (peak_equity - current_equity) / peak_equity * 100.0)
+        if safe_peak > 0:
+            drawdown_pct = max(0.0, (safe_peak - current_equity) / safe_peak * 100.0)
             
         level3_hard_stop = (drawdown_pct >= 15.0)
         if level3_hard_stop:
@@ -117,10 +110,10 @@ class RiskEngine:
         return {
             "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
             "current_equity": round(current_equity, 2),
-            "peak_equity": round(peak_equity, 2),
+            "peak_equity": round(safe_peak, 2),
             "drawdown_pct": round(drawdown_pct, 2),
             "level1_grid_pause": level1_grid_pause,
             "level2_core_shift": level2_core_shift,
             "level3_hard_stop": level3_hard_stop,
-            "status": "LEVEL_3_HARD_STOP" if level3_hard_stop else ("LEVEL_2_CORE_SHIFT" if level2_core_shift else ("LEVEL_1_GRID_PAUSE" if level1_grid_pause else "ALL_SYSTEMS_NORMAL"))
+            "status": "TIER_3_HARD_STOP" if level3_hard_stop else ("TIER_2_CORE_SHIFT" if level2_core_shift else ("TIER_1_GRID_PAUSE" if level1_grid_pause else "ALL_SYSTEMS_NORMAL"))
         }
