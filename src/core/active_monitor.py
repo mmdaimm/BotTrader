@@ -2,7 +2,7 @@ r"""
 WebTraderBot Multi-Timeframe Active Monitoring Engine (Enterprise Specification)
 Implements Multi-Timeframe State Machine Architecture:
 - Real-Time (1s / WS): Execution, Peak Equity Tracking & Tier 3 Circuit Breaker (-15% Max DD)
-- 15m / 30m: Satellite Safety Guard (ADX 4H < 22 & ATR 15m Volatility Spike Guard)
+- 15m / 30m: Satellite Safety Guard (ADX 4H < 28 & ATR 15m Volatility Spike Guard)
 - 4 Hours: Core TWAP Rebalance, Yield Sweep Engine (S >= 2% Total Equity), Geometric Re-gridding
 - 1 Day: Macro Trend Guard (BTC < EMA 200 1D -> 30/20/50), Funding Rate Guard (|FR| > 0.1%)
 """
@@ -139,7 +139,7 @@ class ActiveMonitor:
         r"""
         Multi-Timeframe State Machine Evaluation (Section 4):
         1s: Peak Equity Tracking & Tier 3 Circuit Breaker (-15% Max DD)
-        15m: Satellite Safety Guard (ADX 4H >= 22 or ATR Spike > 3x -> Pause Grid)
+        15m: Satellite Safety Guard (ADX 4H >= 28 or ATR Spike > 3x -> Pause Grid)
         4H: Core Rebalance & Yield Sweep ($S >= 2\%$ Total Equity)
         1D: Macro Trend Guard (BTC < EMA 200 1D -> Shift 30/20/50), Funding Rate Guard (|FR| > 0.1%)
         """
@@ -151,7 +151,7 @@ class ActiveMonitor:
 
         # 2. 15m / 30m Satellite Safety Guard Check
         volatility_spike = (avg_atr_15m > 0 and atr_15m > 3.0 * avg_atr_15m)
-        grid_enabled = (adx_4h < 22.0) and not volatility_spike
+        grid_enabled = (adx_4h < 28.0) and not volatility_spike
 
         # 3. 4H Core Target & Yield Sweep Check
         core_regime = "BEARISH_GUARD (USDT 50%)" if btc_price < btc_ema200_1d else "NORMAL_BULL (USDT 30%)"

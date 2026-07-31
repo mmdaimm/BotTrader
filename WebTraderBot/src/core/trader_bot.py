@@ -198,14 +198,14 @@ class TraderBot:
         if not self.sideway_mode_enabled or self.sideway_state == "STOPPING":
             return {"symbol": symbol, "signal": "NONE", "reason": "Sideway Engine OFF or Stopping"}
 
-        # Capital Quota Guard: Sideway total margin cap <= $400 USD and max 2 active Sideway positions
+        # Capital Quota Guard: Sideway total margin cap <= $600 USD and max 4 active Scalping positions
         active_sideway_positions = [
             p for p in self.paper_engine.active_positions.values() 
             if p.get("strategy_type") == "SIDEWAY_15M"
         ]
         total_sideway_margin = sum(p.get("margin_required", 0) for p in active_sideway_positions)
-        if len(active_sideway_positions) >= 2 or total_sideway_margin >= 400.0:
-            return {"symbol": symbol, "signal": "NONE", "reason": "Sideway Capital Quota Full ($400 Margin / Max 2 Positions)"}
+        if len(active_sideway_positions) >= 4 or total_sideway_margin >= 600.0:
+            return {"symbol": symbol, "signal": "NONE", "reason": "Sideway Capital Quota Full ($600 Margin / Max 4 Positions)"}
 
         if symbol in self.paper_engine.active_positions:
             return {"symbol": symbol, "signal": "NONE", "reason": f"Position already active for {symbol}"}
@@ -215,9 +215,9 @@ class TraderBot:
         adx_list = TechnicalIndicators.calculate_adx(candles_15m, 14)
         adx_val = adx_list[-1] if adx_list else 20.0
 
-        # ADX Regime Guard: Require ADX < 22.0 (Non-trending market)
-        if adx_val >= 22.0:
-            return {"symbol": symbol, "signal": "NONE", "reason": f"ADX too high ({adx_val:.1f} >= 22.0) - Strong Trend Detected"}
+        # ADX Regime Guard: Require ADX < 28.0 (Optimized for Scalping & Grid)
+        if adx_val >= 28.0:
+            return {"symbol": symbol, "signal": "NONE", "reason": f"ADX too high ({adx_val:.1f} >= 28.0) - Strong Trend Detected"}
 
         rsi_list = TechnicalIndicators.calculate_rsi(closes, 14)
         rsi_val = rsi_list[-1] if rsi_list else 50.0
@@ -238,12 +238,12 @@ class TraderBot:
         prev_close = closes[-2]
         curr_close = closes[-1]
 
-        # Reversal Candle Confirmation:
-        # LONG: Prev Close <= Lower Band, Curr Close > Lower Band (Inside Band) + RSI < 35.0
-        is_long_reversal = (prev_close <= lower_band) and (curr_close > lower_band) and (rsi_val < 35.0)
+        # Optimized 15m/1H Scalping Reversal Candle Confirmation:
+        # LONG: Prev Close <= Lower Band, Curr Close > Lower Band (Inside Band) + RSI < 45.0
+        is_long_reversal = (prev_close <= lower_band) and (curr_close > lower_band) and (rsi_val < 45.0)
 
-        # SHORT: Prev Close >= Upper Band, Curr Close < Upper Band (Inside Band) + RSI > 65.0
-        is_short_reversal = (prev_close >= upper_band) and (curr_close < upper_band) and (rsi_val > 65.0)
+        # SHORT: Prev Close >= Upper Band, Curr Close < Upper Band (Inside Band) + RSI > 55.0
+        is_short_reversal = (prev_close >= upper_band) and (curr_close < upper_band) and (rsi_val > 55.0)
 
         market_snapshot = {
             "strategy_type": "SIDEWAY_15M",

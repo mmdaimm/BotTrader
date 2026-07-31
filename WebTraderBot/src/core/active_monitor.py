@@ -151,7 +151,7 @@ class ActiveMonitor:
 
         # 2. 15m / 30m Satellite Safety Guard Check
         volatility_spike = (avg_atr_15m > 0 and atr_15m > 3.0 * avg_atr_15m)
-        grid_enabled = (adx_4h < 22.0) and not volatility_spike
+        grid_enabled = (adx_4h < 28.0) and not volatility_spike
 
         # 3. 4H Core Target & Yield Sweep Check
         core_regime = "BEARISH_GUARD (USDT 50%)" if btc_price < btc_ema200_1d else "NORMAL_BULL (USDT 30%)"

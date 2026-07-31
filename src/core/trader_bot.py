@@ -63,10 +63,10 @@ class TraderBot:
         self.trading_mode = "PAPER"  # "PAPER" or "LIVE"
         self.bot_state = "RUNNING"   # "RUNNING", "PAUSED", "ERROR"
         
-        # Sideway Engine State & Config
-        db_state = self.db.get_bot_state()
-        self.sideway_mode_enabled = bool(db_state.get("sideway_mode_enabled", 0))
-        self.sideway_state = db_state.get("sideway_state", "DISABLED")
+        # Sideway Scalping & Grid Engine State (Enabled by Default)
+        self.sideway_mode_enabled = True
+        self.sideway_state = "ACTIVE"
+        self.db.save_bot_state(self.bot_state, self.trading_mode, initial_capital, self.satellite_capital_30, 3, 1, "ACTIVE")
         
         self.last_signals_sent = {}  # { symbol: signal_key }
         self.symbol_lockouts = {}    # { symbol: lockout_until_timestamp }
@@ -160,11 +160,11 @@ class TraderBot:
                 "market_snapshot": market_snapshot
             }
             
-        if adx_val < 20.0:
+        if adx_val < 15.0:
             return {
                 "symbol": symbol,
                 "signal": "NONE",
-                "reason": f"ADX ({adx_val:.2f}) < 20.0 threshold (Weak trend)",
+                "reason": f"ADX ({adx_val:.2f}) < 15.0 threshold (Weak trend)",
                 "market_snapshot": market_snapshot
             }
             
@@ -176,7 +176,7 @@ class TraderBot:
                 "entry_price": current_price,
                 "atr": atr_val,
                 "market_snapshot": market_snapshot,
-                "reason": "4H Supertrend flipped GREEN + Price > EMA200 + ADX > 20"
+                "reason": "4H Supertrend flipped GREEN + Price > EMA200 + ADX > 15"
             }
             
         is_st_flip_red = (prev_st["direction"] == 1 and curr_st["direction"] == -1)
@@ -187,7 +187,7 @@ class TraderBot:
                 "entry_price": current_price,
                 "atr": atr_val,
                 "market_snapshot": market_snapshot,
-                "reason": "4H Supertrend flipped RED + Price < EMA200 + ADX > 20"
+                "reason": "4H Supertrend flipped RED + Price < EMA200 + ADX > 15"
             }
 
         return {
@@ -198,58 +198,106 @@ class TraderBot:
         }
 
     def evaluate_sideway_signal(self, symbol: str, candles_15m: list) -> dict:
+        """
+        Evaluate 15m Sideway Range Mean-Reversion Signal:
+        1. ADX (14, 15m) < 28.0 Regime Guard (Confirms non-trending regime)
+        2. Reversal Candle Confirmation (Close Inside Band):
+           - LONG: Prev close <= Lower Band, Curr close > Lower Band (Inside Band) + RSI < 45.0
+           - SHORT: Prev close >= Upper Band, Curr close < Upper Band (Inside Band) + RSI > 55.0
+        3. Capital Allocation Cap ($600 max total margin) & max 4 active Scalping positions
+        4. Tagged with strategy_type = 'SIDEWAY_15M' and ID prefix 'SD-'
+        """
         if not candles_15m or len(candles_15m) < 30:
             return {"symbol": symbol, "signal": "NONE", "reason": "Insufficient 15m candles"}
 
+        # Graceful Disabling Check: If sideway_state is "STOPPING" or "DISABLED", block new entries
+        if not self.sideway_mode_enabled or self.sideway_state == "STOPPING":
+            return {"symbol": symbol, "signal": "NONE", "reason": "Sideway Engine OFF or Stopping"}
+
+        # Capital Quota Guard: Sideway total margin cap <= $600 USD and max 4 active Scalping positions
+        active_sideway_positions = [
+            p for p in self.paper_engine.active_positions.values() 
+            if p.get("strategy_type") == "SIDEWAY_15M"
+        ]
+        total_sideway_margin = sum(p.get("margin_required", 0) for p in active_sideway_positions)
+        if len(active_sideway_positions) >= 4 or total_sideway_margin >= 600.0:
+            return {"symbol": symbol, "signal": "NONE", "reason": "Sideway Capital Quota Full ($600 Margin / Max 4 Positions)"}
+
+        if symbol in self.paper_engine.active_positions:
+            return {"symbol": symbol, "signal": "NONE", "reason": f"Position already active for {symbol}"}
+
         closes = [c["close"] for c in candles_15m]
+
+        adx_list = TechnicalIndicators.calculate_adx(candles_15m, 14)
+        adx_val = adx_list[-1] if adx_list else 20.0
+
+        # ADX Regime Guard: Require ADX < 28.0 (Optimized for Scalping & Grid)
+        if adx_val >= 28.0:
+            return {"symbol": symbol, "signal": "NONE", "reason": f"ADX too high ({adx_val:.1f} >= 28.0) - Strong Trend Detected"}
+
+        rsi_list = TechnicalIndicators.calculate_rsi(closes, 14)
+        rsi_val = rsi_list[-1] if rsi_list else 50.0
+
+        atr_val = TechnicalIndicators.calculate_atr(candles_15m, 14)[-1]
+
+        # Calculate Bollinger Bands (20, 2.0)
+        sma20 = TechnicalIndicators.calculate_sma(closes, 20)
+        sma20_curr = sma20[-1]
+        
+        recent20 = closes[-20:]
+        mean20 = sum(recent20) / 20
+        variance20 = sum((x - mean20) ** 2 for x in recent20) / 20
+        std20 = math.sqrt(variance20)
+        upper_band = sma20_curr + (2.0 * std20)
+        lower_band = sma20_curr - (2.0 * std20)
+
         prev_close = closes[-2]
         curr_close = closes[-1]
 
-        sma20 = TechnicalIndicators.calculate_sma(closes, 20)[-1]
-        std20 = TechnicalIndicators.calculate_std(closes, 20)[-1]
-        lower_band = round(sma20 - (2.0 * std20), 4)
-        upper_band = round(sma20 + (2.0 * std20), 4)
+        # Optimized 15m/1H Scalping Reversal Candle Confirmation:
+        # LONG: Prev Close <= Lower Band, Curr Close > Lower Band (Inside Band) + RSI < 45.0
+        is_long_reversal = (prev_close <= lower_band) and (curr_close > lower_band) and (rsi_val < 45.0)
 
-        rsi14 = TechnicalIndicators.calculate_rsi(closes, 14)[-1]
-        atr15m = TechnicalIndicators.calculate_atr(candles_15m, 14)[-1]
+        # SHORT: Prev Close >= Upper Band, Curr Close < Upper Band (Inside Band) + RSI > 55.0
+        is_short_reversal = (prev_close >= upper_band) and (curr_close < upper_band) and (rsi_val > 55.0)
 
         market_snapshot = {
             "strategy_type": "SIDEWAY_15M",
             "timeframe": "15m",
-            "bb_lower": lower_band,
-            "bb_middle": round(sma20, 4),
-            "bb_upper": upper_band,
-            "rsi_15m": round(rsi14, 2),
-            "atr_15m": round(atr15m, 4)
+            "adx": round(adx_val, 2),
+            "rsi": round(rsi_val, 2),
+            "upper_band": round(upper_band, 4),
+            "lower_band": round(lower_band, 4),
+            "middle_band": round(sma20_curr, 4),
+            "atr_15m": round(atr_val, 4)
         }
 
-        if symbol in self.paper_engine.active_positions:
-            return {"symbol": symbol, "signal": "NONE", "reason": "Position already active"}
-
-        if prev_close <= lower_band and curr_close > lower_band and rsi14 < 35.0:
-            sl_price = round(curr_close - (1.5 * atr15m), 4)
+        if is_long_reversal:
+            tp_price = round(sma20_curr, 4)
+            sl_price = round(curr_close - (1.5 * atr_val), 4)
             return {
                 "symbol": symbol,
                 "signal": "LONG",
                 "entry_price": curr_close,
                 "sl_price": sl_price,
-                "tp1_target": round(sma20, 4),
+                "tp1_target": tp_price,
                 "market_snapshot": market_snapshot,
                 "id_prefix": "SD-",
-                "reason": "15m Lower BB Reversal + RSI Oversold (< 35)"
+                "reason": f"15m BB Lower Reversal + RSI ({rsi_val:.1f} < 45.0)"
             }
 
-        if prev_close >= upper_band and curr_close < upper_band and rsi14 > 65.0:
-            sl_price = round(curr_close + (1.5 * atr15m), 4)
+        if is_short_reversal:
+            tp_price = round(sma20_curr, 4)
+            sl_price = round(curr_close + (1.5 * atr_val), 4)
             return {
                 "symbol": symbol,
                 "signal": "SHORT",
                 "entry_price": curr_close,
                 "sl_price": sl_price,
-                "tp1_target": round(sma20, 4),
+                "tp1_target": tp_price,
                 "market_snapshot": market_snapshot,
                 "id_prefix": "SD-",
-                "reason": "15m Upper BB Reversal + RSI Overbought (> 65)"
+                "reason": f"15m BB Upper Reversal + RSI ({rsi_val:.1f} > 55.0)"
             }
 
         return {"symbol": symbol, "signal": "NONE", "reason": "No sideway reversal", "market_snapshot": market_snapshot}
