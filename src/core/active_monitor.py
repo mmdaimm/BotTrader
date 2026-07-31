@@ -63,6 +63,65 @@ class ActiveMonitor:
             logger.error(f"[ActiveMonitor] Error fetching {resolution} candles for {symbol}: {e}")
         return []
 
+    def send_position_monitoring_telemetry(self, active_positions: list, pair_results: dict):
+        """
+        Send Telegram Monitoring Status Update for each active position matching user's custom template:
+        ETH-USDT-SWAP
+        ฝั่ง: LONG (3x Leverage)
+        ราคาเข้า (Entry Price): $1,919.13 USD
+        กำไร/ขาดทุนเรียลไทม์ (Unrealized PnL): +$0.45 USD
+        เทรนด์: ขาขึ้น (Bullish)
+        คำแนะนำ: Hold
+        """
+        if not self.notifier or not active_positions:
+            return
+
+        for pos in active_positions:
+            sym = pos.get("symbol", "N/A")
+            side = pos.get("side", "LONG")
+            leverage = pos.get("leverage", 3)
+            entry_p = pos.get("entry_price", 0.0)
+            
+            # Fetch current price & market snapshot from pair_results
+            market_snapshot = pair_results.get(sym, {}).get("eval", {}).get("market_snapshot", {})
+            curr_price = pair_results.get(sym, {}).get("last_price", entry_p)
+            st_direction = market_snapshot.get("st_direction", "GREEN")
+            trend_str = "ขาขึ้น (Bullish)" if st_direction == "GREEN" else "ขาลง (Bearish)"
+
+            # Calculate Unrealized PnL
+            qty = pos.get("qty", 0.0)
+            margin = pos.get("margin_required", 100.0)
+            if side == "LONG":
+                unrealized_pnl = (curr_price - entry_p) * qty
+            else:
+                unrealized_pnl = (entry_p - curr_price) * qty
+            
+            pnl_pct = (unrealized_pnl / margin * 100.0) if margin > 0 else 0.0
+            pnl_str = f"+${unrealized_pnl:,.2f} USD (+{pnl_pct:.2f}%)" if unrealized_pnl >= 0 else f"-${abs(unrealized_pnl):,.2f} USD ({pnl_pct:.2f}%)"
+
+            # Recommendation logic (Hold / Take Profit / Warning / Cut)
+            if pnl_pct >= 10.0:
+                recommendation = "Take Profit (พิจารณาปิดทำกำไรบางส่วน)"
+            elif pnl_pct <= -10.0:
+                recommendation = "Warning SL (เฝ้าระวังจุดตัดขาดทุน)"
+            else:
+                recommendation = "Hold"
+
+            msg = (
+                f"<b>📡 [ACTIVE MONITOR REPORT]</b>\n"
+                f"<b>{sym}</b>\n"
+                f"<b>ฝั่ง:</b> {side} ({leverage}x Leverage)\n"
+                f"<b>ราคาเข้า (Entry Price):</b> ${entry_p:,.4f} USD\n"
+                f"<b>ราคาปัจจุบัน (Current Price):</b> ${curr_price:,.4f} USD\n"
+                f"<b>กำไร/ขาดทุนเรียลไทม์ (Unrealized PnL):</b> {pnl_str}\n"
+                f"<b>เทรนด์:</b> {trend_str}\n"
+                f"<b>คำแนะนำ:</b> <b>{recommendation}</b>"
+            )
+            try:
+                self.notifier.send_message(msg)
+            except Exception as e:
+                logger.error(f"[ActiveMonitor] Telegram send error: {e}")
+
     def evaluate_multi_timeframe_matrix(self, btc_price: float, total_equity: float, peak_equity: float, adx_4h: float, atr_15m: float, avg_atr_15m: float, btc_ema200_1d: float, funding_rate: float) -> dict:
         r"""
         Multi-Timeframe State Machine Evaluation (Section 4):

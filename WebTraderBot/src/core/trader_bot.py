@@ -590,6 +590,9 @@ class TraderBot:
             btc_price, current_total_equity, safe_peak, adx_4h, atr_15m, atr_15m, btc_ema200_1d, funding_rate
         )
 
+        # 5. Send Active Monitoring Telegram Notification matching user's custom template
+        self.active_monitor.send_position_monitoring_telemetry(list(self.paper_engine.active_positions.values()), pair_results)
+
         paper_summary = self.paper_engine.get_summary()
         
         return {
