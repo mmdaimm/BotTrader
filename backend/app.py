@@ -11,6 +11,7 @@ import sys
 import os
 import time
 import uuid
+import threading
 from concurrent.futures import ProcessPoolExecutor
 
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -31,7 +32,7 @@ def load_env_file():
                     if line and not line.startswith("#") and "=" in line:
                         k, v = line.split("=", 1)
                         k = k.strip()
-                        v = v.strip().strip("'").strip('"')
+                        v = v.strip().strip('"').strip("'")
                         if k and v and k not in os.environ:
                             os.environ[k] = v
 
@@ -98,30 +99,108 @@ process_pool = ProcessPoolExecutor(max_workers=2)
 # Backtest Jobs Store
 backtest_jobs = {}
 
+def start_background_monitoring_loop():
+    """
+    Continuous background daemon thread that automatically scans OKX candles across all 20 coins
+    every 60 seconds and triggers Telegram Active Monitoring updates without needing web polling.
+    """
+    print("[BackgroundMonitor] 🚀 Starting continuous OKX candle monitoring thread (60s loop)...")
+    while True:
+        try:
+            if bot.bot_state == "RUNNING":
+                bot.sync_live_exchange_positions()
+                bot.run_single_iteration()
+        except Exception as e:
+            print(f"[BackgroundMonitor] Error in background monitoring loop: {e}")
+        time.sleep(60)
+
+@app.on_event("startup")
+def on_startup():
+    """FastAPI startup event handler: starts continuous background monitoring thread."""
+    t = threading.Thread(target=start_background_monitoring_loop, daemon=True)
+    t.start()
+
 @app.get("/")
 def read_root():
-    return {
-        "status": "ONLINE",
-        "service": "WebTraderBot FastAPI Engine (OKX 15-Veteran Futures Portfolio)",
-        "version": "5.1.0-OKX-DEMO",
-        "trading_mode": bot.trading_mode,
-        "bot_state": bot.bot_state,
-        "sideway_mode_enabled": bot.sideway_mode_enabled,
-        "sideway_state": bot.sideway_state,
-        "symbols_count": len(bot.symbols)
-    }
+    return {"message": "🟢 OKX 15-Veteran Futures Trading Engine Backend is Running Live!", "status": bot.bot_state}
 
 @app.get("/api/status")
-def get_bot_status():
-    """Return real-time bot state, active positions, indicators, and paper trading statistics."""
-    try:
-        return bot.run_single_iteration()
-    except Exception as e:
-        return {
-            "status": "ERROR",
-            "message": str(e),
-            "bot_state": bot.bot_state
-        }
+def get_status():
+    """Return real-time bot metrics, prices, indicators, active positions, and trade history."""
+    bot.sync_live_exchange_positions()
+    res = bot.run_single_iteration()
+    # 100% Single Source of Truth: Sync active_positions strictly with OKX Live Positions API
+    if hasattr(bot, 'client') and bot.client:
+        # Fetch pending algo orders to resolve attached SL/TP trigger prices
+        algo_map = {}
+        if hasattr(bot.client, 'get_pending_algo_orders'):
+            algo_res = bot.client.get_pending_algo_orders(instType="SWAP")
+            if algo_res.get("code") == "0":
+                for a in algo_res.get("data", []):
+                    a_sym = a.get("instId", "")
+                    if a_sym not in algo_map:
+                        algo_map[a_sym] = {"sl_price": 0.0, "tp_price": 0.0}
+                    sl_t = float(a.get("slTriggerPx", 0.0) or 0.0)
+                    tp_t = float(a.get("tpTriggerPx", 0.0) or 0.0)
+                    trig_t = float(a.get("triggerPx", 0.0) or 0.0)
+                    if sl_t > 0:
+                        algo_map[a_sym]["sl_price"] = sl_t
+                    if tp_t > 0:
+                        algo_map[a_sym]["tp_price"] = tp_t
+                    if trig_t > 0:
+                        if sl_t <= 0 and (a.get("slTriggerPx") is not None or "sl" in str(a.get("algoClOrdId", "")).lower()):
+                            algo_map[a_sym]["sl_price"] = trig_t
+                        elif tp_t <= 0 and (a.get("tpTriggerPx") is not None or "tp" in str(a.get("algoClOrdId", "")).lower()):
+                            algo_map[a_sym]["tp_price"] = trig_t
+
+        okx_pos_res = bot.client.get_positions(instType="SWAP")
+        if okx_pos_res.get("code") == "0":
+            data_list = okx_pos_res.get("data", [])
+            live_okx_positions = []
+            for p in data_list:
+                p_size = float(p.get("pos", 0.0) or 0.0)
+                if p_size != 0:
+                    sym = p.get("instId", "")
+                    pos_side = str(p.get("posSide", "long")).upper()
+                    if pos_side == "NET":
+                        pos_side = "LONG" if p_size > 0 else "SHORT"
+                    entry_px = float(p.get("avgPx", 0.0) or 0.0)
+                    mark_px = float(p.get("markPx", entry_px) or entry_px)
+                    upl = float(p.get("upl", 0.0) or 0.0)
+                    margin = float(p.get("margin", 100.0) or 100.0)
+                    
+                    attached = algo_map.get(sym, {})
+                    sl_p = attached.get("sl_price", 0.0)
+                    tp_p = attached.get("tp_price", 0.0)
+                    
+                    if sl_p <= 0:
+                        sl_p = float(p.get("slTriggerPx", 0.0) or 0.0)
+                    if tp_p <= 0:
+                        tp_p = float(p.get("tpTriggerPx", 0.0) or 0.0)
+
+                    live_okx_positions.append({
+                        "id": f"OKX-{sym}-{pos_side}",
+                        "symbol": sym,
+                        "side": pos_side,
+                        "timeframe": "4h",
+                        "strategy_type": "SWING_4H",
+                        "leverage": int(float(p.get("lever", 3) or 3)),
+                        "entry_price": entry_px,
+                        "mark_price": mark_px,
+                        "qty": abs(p_size),
+                        "order_value": round(abs(p_size) * mark_px, 2),
+                        "margin_required": margin,
+                        "unrealized_pnl": round(upl, 2),
+                        "pnl_pct": round(upl / margin * 100.0, 2) if margin > 0 else 0.0,
+                        "sl_price": sl_p,
+                        "tp_price": tp_p,
+                        "tp1_target": tp_p,
+                        "status": "OPEN",
+                        "source": "OKX_LIVE_EXCHANGE"
+                    })
+            res["active_positions"] = live_okx_positions
+            res["paper_summary"]["active_positions_count"] = len(live_okx_positions)
+    return res
 
 @app.get("/api/cashflow-summary")
 def get_cashflow_summary():

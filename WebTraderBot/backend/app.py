@@ -11,6 +11,7 @@ import sys
 import os
 import time
 import uuid
+import threading
 from concurrent.futures import ProcessPoolExecutor
 
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -97,6 +98,27 @@ process_pool = ProcessPoolExecutor(max_workers=2)
 
 # Backtest Jobs Store
 backtest_jobs = {}
+
+def start_background_monitoring_loop():
+    """
+    Continuous background daemon thread that automatically scans OKX candles across all 20 coins
+    every 60 seconds and triggers Telegram Active Monitoring updates without needing web polling.
+    """
+    print("[BackgroundMonitor] 🚀 Starting continuous OKX candle monitoring thread (60s loop)...")
+    while True:
+        try:
+            if bot.bot_state == "RUNNING":
+                bot.sync_live_exchange_positions()
+                bot.run_single_iteration()
+        except Exception as e:
+            print(f"[BackgroundMonitor] Error in background monitoring loop: {e}")
+        time.sleep(60)
+
+@app.on_event("startup")
+def on_startup():
+    """FastAPI startup event handler: starts continuous background monitoring thread."""
+    t = threading.Thread(target=start_background_monitoring_loop, daemon=True)
+    t.start()
 
 @app.get("/")
 def read_root():
