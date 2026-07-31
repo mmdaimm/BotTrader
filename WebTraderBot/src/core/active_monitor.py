@@ -23,12 +23,15 @@ class ActiveMonitor:
         self.db = db_manager or DatabaseManager()
         self.notifier = notifier
         
-        # Debounced Timestamps for Multi-Timeframe State Machine
+        # Debounced Timestamps & Recommendation State Tracking
         self.last_1s_ts = 0
         self.last_15m_ts = 0
         self.last_4h_ts = 0
         self.last_1d_ts = 0
         self.scan_interval_sec = 900  # 15 Minutes default Loop
+        
+        self.last_sent_recommendations = {}  # { "ETH-USDT-SWAP": "Hold" }
+        self.last_sent_timestamps = {}       # { "ETH-USDT-SWAP": timestamp }
         
         self.candle_cache = {}          # { "symbol_res": (timestamp, candles) }
         self.last_scan_results = {
@@ -66,15 +69,13 @@ class ActiveMonitor:
     def send_position_monitoring_telemetry(self, active_positions: list, pair_results: dict):
         """
         Send Telegram Monitoring Status Update for each active position matching user's custom template:
-        ETH-USDT-SWAP
-        ฝั่ง: LONG (3x Leverage)
-        ราคาเข้า (Entry Price): $1,919.13 USD
-        กำไร/ขาดทุนเรียลไทม์ (Unrealized PnL): +$0.45 USD
-        เทรนด์: ขาขึ้น (Bullish)
-        คำแนะนำ: Hold
+        - If recommendation is "Hold", send once every 1 hour (3600 seconds / 60 scans).
+        - If recommendation changes from "Hold" to anything else (Take Profit / Warning SL), send IMMEDIATELY!
         """
         if not self.notifier or not active_positions:
             return
+
+        now = time.time()
 
         for pos in active_positions:
             sym = pos.get("symbol", "N/A")
@@ -107,20 +108,32 @@ class ActiveMonitor:
             else:
                 recommendation = "Hold"
 
-            msg = (
-                f"<b>📡 [ACTIVE MONITOR REPORT]</b>\n"
-                f"<b>{sym}</b>\n"
-                f"<b>ฝั่ง:</b> {side} ({leverage}x Leverage)\n"
-                f"<b>ราคาเข้า (Entry Price):</b> ${entry_p:,.4f} USD\n"
-                f"<b>ราคาปัจจุบัน (Current Price):</b> ${curr_price:,.4f} USD\n"
-                f"<b>กำไร/ขาดทุนเรียลไทม์ (Unrealized PnL):</b> {pnl_str}\n"
-                f"<b>เทรนด์:</b> {trend_str}\n"
-                f"<b>คำแนะนำ:</b> <b>{recommendation}</b>"
-            )
-            try:
-                self.notifier.send_message(msg)
-            except Exception as e:
-                logger.error(f"[ActiveMonitor] Telegram send error: {e}")
+            # Notification Debouncing & State-Change Logic
+            prev_rec = self.last_sent_recommendations.get(sym)
+            last_ts = self.last_sent_timestamps.get(sym, 0)
+            time_elapsed_sec = now - last_ts
+
+            rec_changed = (prev_rec is not None and prev_rec != recommendation)
+            is_hourly_due = (time_elapsed_sec >= 3600)  # 3600 seconds = 1 Hour (60 scans)
+
+            # Send Telegram ONLY if recommendation changed OR 1 hour has passed since last notification
+            if rec_changed or prev_rec is None or is_hourly_due:
+                msg = (
+                    f"<b>📡 [ACTIVE MONITOR REPORT]</b>\n"
+                    f"<b>{sym}</b>\n"
+                    f"<b>ฝั่ง:</b> {side} ({leverage}x Leverage)\n"
+                    f"<b>ราคาเข้า (Entry Price):</b> ${entry_p:,.4f} USD\n"
+                    f"<b>ราคาปัจจุบัน (Current Price):</b> ${curr_price:,.4f} USD\n"
+                    f"<b>กำไร/ขาดทุนเรียลไทม์ (Unrealized PnL):</b> {pnl_str}\n"
+                    f"<b>เทรนด์:</b> {trend_str}\n"
+                    f"<b>คำแนะนำ:</b> <b>{recommendation}</b>"
+                )
+                try:
+                    self.notifier.send_message(msg)
+                    self.last_sent_recommendations[sym] = recommendation
+                    self.last_sent_timestamps[sym] = now
+                except Exception as e:
+                    logger.error(f"[ActiveMonitor] Telegram send error: {e}")
 
     def evaluate_multi_timeframe_matrix(self, btc_price: float, total_equity: float, peak_equity: float, adx_4h: float, atr_15m: float, avg_atr_15m: float, btc_ema200_1d: float, funding_rate: float) -> dict:
         r"""
