@@ -72,7 +72,7 @@ class TraderBot:
         self.symbol_lockouts = {}    # { symbol: lockout_until_timestamp }
 
     def sync_live_exchange_positions(self):
-        """Reconcile local paper positions with OKX exchange API positions."""
+        """Reconcile local paper positions with OKX exchange API positions (100% Bi-Directional Synchronization)."""
         if not hasattr(self, 'client') or not self.client:
             return
         res = self.client.get_positions(instType="SWAP")
@@ -109,6 +109,20 @@ class TraderBot:
                             "status": "OPEN"
                         }
                         self.paper_engine._save_state()
+
+            # Purge closed positions that are no longer active on OKX
+            local_keys = list(self.paper_engine.active_positions.keys())
+            for key in local_keys:
+                pos = self.paper_engine.active_positions[key]
+                sym = pos.get("symbol", key)
+                if sym not in active_symbols_on_okx:
+                    print(f"[TraderBot Sync] Purging closed position for {sym} (No longer active on OKX exchange)")
+                    del self.paper_engine.active_positions[key]
+                    if sym in self.active_monitor.last_sent_recommendations:
+                        del self.active_monitor.last_sent_recommendations[sym]
+                    if sym in self.active_monitor.last_sent_timestamps:
+                        del self.active_monitor.last_sent_timestamps[sym]
+                    self.paper_engine._save_state()
 
     def evaluate_pair_signal(self, symbol: str, candles: list) -> dict:
         if not candles or len(candles) < 200:
