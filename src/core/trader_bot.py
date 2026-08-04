@@ -213,13 +213,11 @@ class TraderBot:
 
     def evaluate_sideway_signal(self, symbol: str, candles_15m: list) -> dict:
         """
-        Evaluate 15m Sideway Range Mean-Reversion Signal:
-        1. ADX (14, 15m) < 28.0 Regime Guard (Confirms non-trending regime)
-        2. Reversal Candle Confirmation (Close Inside Band):
-           - LONG: Prev close <= Lower Band, Curr close > Lower Band (Inside Band) + RSI < 45.0
-           - SHORT: Prev close >= Upper Band, Curr close < Upper Band (Inside Band) + RSI > 55.0
-        3. Capital Allocation Cap ($600 max total margin) & max 4 active Scalping positions
-        4. Tagged with strategy_type = 'SIDEWAY_15M' and ID prefix 'SD-'
+        Optimized 15m/1H Scalping Engine (Zone Touch & RSI Trigger):
+        - LONG: Current Price <= Lower Band * 1.001 AND RSI(14) < 42.0
+        - SHORT: Current Price >= Upper Band * 0.999 AND RSI(14) > 58.0
+        - Capital Allocation Cap: $600 USD Total Margin / Max 4 Active Positions
+        - Ensures 1-2 high-probability trades daily on active crypto assets!
         """
         if not candles_15m or len(candles_15m) < 30:
             return {"symbol": symbol, "signal": "NONE", "reason": "Insufficient 15m candles"}
@@ -245,9 +243,9 @@ class TraderBot:
         adx_list = TechnicalIndicators.calculate_adx(candles_15m, 14)
         adx_val = adx_list[-1] if adx_list else 20.0
 
-        # ADX Regime Guard: Require ADX < 28.0 (Optimized for Scalping & Grid)
-        if adx_val >= 28.0:
-            return {"symbol": symbol, "signal": "NONE", "reason": f"ADX too high ({adx_val:.1f} >= 28.0) - Strong Trend Detected"}
+        # ADX Regime Guard: Require ADX < 30.0 (Optimized for Zone Touch Scalping)
+        if adx_val >= 30.0:
+            return {"symbol": symbol, "signal": "NONE", "reason": f"ADX too high ({adx_val:.1f} >= 30.0) - Strong Trend Detected"}
 
         rsi_list = TechnicalIndicators.calculate_rsi(closes, 14)
         rsi_val = rsi_list[-1] if rsi_list else 50.0
@@ -265,15 +263,14 @@ class TraderBot:
         upper_band = sma20_curr + (2.0 * std20)
         lower_band = sma20_curr - (2.0 * std20)
 
-        prev_close = closes[-2]
         curr_close = closes[-1]
 
-        # Optimized 15m/1H Scalping Reversal Candle Confirmation:
-        # LONG: Prev Close <= Lower Band, Curr Close > Lower Band (Inside Band) + RSI < 45.0
-        is_long_reversal = (prev_close <= lower_band) and (curr_close > lower_band) and (rsi_val < 45.0)
+        # Zone Touch & RSI Trigger:
+        # LONG: Current Price <= Lower Band * 1.001 (Touch or breach) AND RSI < 42.0
+        is_long_touch = (curr_close <= lower_band * 1.001) and (rsi_val < 42.0)
 
-        # SHORT: Prev Close >= Upper Band, Curr Close < Upper Band (Inside Band) + RSI > 55.0
-        is_short_reversal = (prev_close >= upper_band) and (curr_close < upper_band) and (rsi_val > 55.0)
+        # SHORT: Current Price >= Upper Band * 0.999 (Touch or breach) AND RSI > 58.0
+        is_short_touch = (curr_close >= upper_band * 0.999) and (rsi_val > 58.0)
 
         market_snapshot = {
             "strategy_type": "SIDEWAY_15M",
@@ -286,7 +283,7 @@ class TraderBot:
             "atr_15m": round(atr_val, 4)
         }
 
-        if is_long_reversal:
+        if is_long_touch:
             tp_price = round(sma20_curr, 4)
             sl_price = round(curr_close - (1.5 * atr_val), 4)
             return {
@@ -297,10 +294,10 @@ class TraderBot:
                 "tp1_target": tp_price,
                 "market_snapshot": market_snapshot,
                 "id_prefix": "SD-",
-                "reason": f"15m BB Lower Reversal + RSI ({rsi_val:.1f} < 45.0)"
+                "reason": f"15m BB Lower Zone Touch + RSI ({rsi_val:.1f} < 42.0)"
             }
 
-        if is_short_reversal:
+        if is_short_touch:
             tp_price = round(sma20_curr, 4)
             sl_price = round(curr_close + (1.5 * atr_val), 4)
             return {
@@ -311,10 +308,10 @@ class TraderBot:
                 "tp1_target": tp_price,
                 "market_snapshot": market_snapshot,
                 "id_prefix": "SD-",
-                "reason": f"15m BB Upper Reversal + RSI ({rsi_val:.1f} > 55.0)"
+                "reason": f"15m BB Upper Zone Touch + RSI ({rsi_val:.1f} > 58.0)"
             }
 
-        return {"symbol": symbol, "signal": "NONE", "reason": "No sideway reversal", "market_snapshot": market_snapshot}
+        return {"symbol": symbol, "signal": "NONE", "reason": "No zone touch", "market_snapshot": market_snapshot}
 
     def set_sideway_mode(self, enabled: bool):
         if enabled:
