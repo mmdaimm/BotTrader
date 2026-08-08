@@ -461,6 +461,14 @@ class TraderBot:
                         "eval": eval_res
                     }
                     if eval_res.get("signal") in ["LONG", "SHORT"]:
+                        # 1. Submit REAL order directly to OKX Demo API
+                        okx_order_res = self.client.place_market_order(
+                            symbol=sym,
+                            side=eval_res["signal"],
+                            sz=1.0,
+                            sl_price=eval_res["sl_price"],
+                            tp_price=eval_res["tp1_target"]
+                        )
                         open_res = self.paper_engine.open_position(
                             symbol=sym,
                             side=eval_res["signal"],
@@ -473,10 +481,11 @@ class TraderBot:
                         if open_res.get("status") == "SUCCESS":
                             opened_symbols_this_iteration.add(sym)
                             self.notifier.send_message(
-                                f"<b>📡 [SWING 4H SIGNAL]</b>\n"
-                                f"Asset: {sym} ({eval_res['signal']})\n"
-                                f"Entry: ${eval_res['entry_price']:,.4f}\n"
-                                f"TP1: ${eval_res['tp1_target']:,.4f} | SL: ${eval_res['sl_price']:,.4f}"
+                                f"<b>🚀 [OKX SWING 4H ORDER PLACED]</b>\n"
+                                f"Asset: <b>{sym}</b> ({eval_res['signal']})\n"
+                                f"Entry Price: ${eval_res['entry_price']:,.4f}\n"
+                                f"TP1: ${eval_res['tp1_target']:,.4f} | SL: ${eval_res['sl_price']:,.4f}\n"
+                                f"OKX Status: {okx_order_res.get('status')}"
                             )
 
                 # 2. Evaluate 15m Sideway Engine Signal (If Enabled and no 4H Swing entry for same symbol)
@@ -495,6 +504,14 @@ class TraderBot:
 
                         sd_eval = self.evaluate_sideway_signal(sym, candles_15m)
                         if sd_eval.get("signal") in ["LONG", "SHORT"]:
+                            # 1. Submit REAL order directly to OKX Demo API
+                            okx_sd_res = self.client.place_market_order(
+                                symbol=sym,
+                                side=sd_eval["signal"],
+                                sz=1.0,
+                                sl_price=sd_eval["sl_price"],
+                                tp_price=sd_eval["tp1_target"]
+                            )
                             self.paper_engine.open_position(
                                 symbol=sym,
                                 side=sd_eval["signal"],
@@ -505,10 +522,11 @@ class TraderBot:
                                 id_prefix=sd_eval.get("id_prefix", "SD-")
                             )
                             self.notifier.send_message(
-                                f"<b>📡 [SIDEWAY 15M SIGNAL]</b>\n"
-                                f"Asset: {sym} ({sd_eval['signal']})\n"
-                                f"Entry: ${sd_eval['entry_price']:,.4f}\n"
-                                f"TP (Middle Band): ${sd_eval['tp1_target']:,.4f} | SL: ${sd_eval['sl_price']:,.4f}"
+                                f"<b>🚀 [OKX SCALPING 15M ORDER PLACED]</b>\n"
+                                f"Asset: <b>{sym}</b> ({sd_eval['signal']})\n"
+                                f"Entry Price: ${sd_eval['entry_price']:,.4f}\n"
+                                f"TP Target: ${sd_eval['tp1_target']:,.4f} | SL: ${sd_eval['sl_price']:,.4f}\n"
+                                f"OKX Status: {okx_sd_res.get('status')}"
                             )
 
             except Exception as e:
