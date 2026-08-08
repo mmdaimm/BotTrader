@@ -411,12 +411,61 @@ class OKXClient:
                 res = _execute_order(clean_payload)
                 if res.get("status") == "SUCCESS":
                     res["stage_success"] = idx
+                    # Auto-submit attached Conditional TP/SL Algo Order to OKX Exchange
+                    if (sl_price and float(sl_price) > 0) or (tp_price and float(tp_price) > 0):
+                        algo_res = self.place_algo_tpsl_order(symbol, side, sz_contracts, sl_price=sl_price, tp_price=tp_price)
+                        res["algo_order_res"] = algo_res
                     return res
                 last_res = res
 
             return last_res if last_res else {"status": "ERROR", "message": "All execution stages failed"}
         except Exception as e:
             print(f"[OKXClient] Place order exception: {e}")
+            return {"status": "ERROR", "message": str(e)}
+
+    def place_algo_tpsl_order(self, symbol: str, side: str, sz_contracts: int, sl_price: float = None, tp_price: float = None, td_mode: str = "cross") -> dict:
+        """
+        Place Conditional TP/SL Algo Order directly on OKX Exchange API (POST /api/v5/trade/order-algo).
+        Appears under 'Algo Orders' / 'Pending TP/SL' tab on OKX Demo Web UI!
+        """
+        self._resolve_keys()
+        if not self.api_key or not self.api_secret or not self.passphrase:
+            return {"status": "ERROR", "message": "OKX API Keys missing on server"}
+
+        try:
+            path = "/api/v5/trade/order-algo"
+            url = f"{self.host}{path}"
+            
+            close_side = "sell" if side.upper() == "LONG" else "buy"
+            pos_side = "long" if side.upper() == "LONG" else "short"
+            
+            payload = {
+                "instId": symbol,
+                "tdMode": td_mode,
+                "side": close_side,
+                "ordType": "conditional",
+                "sz": str(sz_contracts)
+            }
+            if tp_price and float(tp_price) > 0:
+                payload["tpTriggerPx"] = f"{float(tp_price):.4f}"
+                payload["tpOrdPx"] = "-1"
+                payload["tpTriggerPxType"] = "last"
+            if sl_price and float(sl_price) > 0:
+                payload["slTriggerPx"] = f"{float(sl_price):.4f}"
+                payload["slOrdPx"] = "-1"
+                payload["slTriggerPxType"] = "last"
+
+            body = json.dumps(payload)
+            headers = self._get_headers("POST", path, body)
+            req = urllib.request.Request(url, data=body.encode('utf-8'), headers=headers, method="POST")
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                data = json.loads(resp.read().decode())
+                if data.get("code") == "0" and data.get("data"):
+                    return {"status": "SUCCESS", "algoId": data["data"][0].get("algoId"), "raw_response": data}
+                else:
+                    return {"status": "API_ERROR", "code": data.get("code"), "message": data.get("msg", "Algo order failed"), "raw_response": data}
+        except Exception as e:
+            print(f"[OKXClient] Place algo order exception: {e}")
             return {"status": "ERROR", "message": str(e)}
 
     def get_positions(self, instType: str = "SWAP") -> dict:
