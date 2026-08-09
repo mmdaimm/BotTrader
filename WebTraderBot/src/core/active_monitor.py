@@ -69,15 +69,47 @@ class ActiveMonitor:
     def send_position_monitoring_telemetry(self, active_positions: list, pair_results: dict):
         """
         Send Telegram Monitoring Status Update for each active position matching user's custom template:
+        - Performs Real-Time Direct Verification with OKX API before sending.
+        - Automatically purges closed positions and stops sending Telegram messages for them.
         - If recommendation is "Hold", send once every 1 hour (3600 seconds / 60 scans).
         - If recommendation changes from "Hold" to anything else (Take Profit / Warning SL), send IMMEDIATELY!
         """
-        if not self.notifier or not active_positions:
+        if not self.notifier:
             return
 
         now = time.time()
 
-        for pos in active_positions:
+        # 1. Real-Time Direct OKX Exchange Position Verification
+        active_okx_symbols = set()
+        if self.client and hasattr(self.client, 'get_positions'):
+            try:
+                pos_resp = self.client.get_positions(instType="SWAP")
+                if pos_resp.get("code") == "0":
+                    for p in pos_resp.get("data", []):
+                        p_sz = float(p.get("pos", 0.0) or 0.0)
+                        if p_sz != 0:
+                            active_okx_symbols.add(p.get("instId"))
+            except Exception as e:
+                logger.error(f"[ActiveMonitor] OKX position fetch error: {e}")
+
+        # 2. Hard purge any closed cached symbols from Telegram trackers
+        cached_keys = list(self.last_sent_recommendations.keys())
+        for k in cached_keys:
+            if k not in active_okx_symbols:
+                del self.last_sent_recommendations[k]
+                if k in self.last_sent_timestamps:
+                    del self.last_sent_timestamps[k]
+
+        # 3. Filter active positions to only those confirmed open on OKX
+        verified_positions = [
+            p for p in active_positions 
+            if p.get("symbol") in active_okx_symbols
+        ]
+
+        if not verified_positions:
+            return
+
+        for pos in verified_positions:
             sym = pos.get("symbol", "N/A")
             side = pos.get("side", "LONG")
             leverage = pos.get("leverage", 3)
