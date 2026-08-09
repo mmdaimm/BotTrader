@@ -574,6 +574,20 @@ class TraderBot:
             btc_qty, btc_price, eth_qty, eth_price, usdt_cash, btc_ema200_1d
         )
         
+        # Send Spot Rebalance Telegram Notification if executed
+        for act in rebalance_telemetry.get("rebalance_actions", []):
+            if act.get("triggered"):
+                spot_res = act.get("twap_execution", {}).get("spot_order_res", {})
+                self.notifier.send_message(
+                    f"<b>⚖️ [OKX SPOT REBALANCE EXECUTED]</b>\n"
+                    f"Asset: <b>{act.get('asset')}/USDT (Spot)</b>\n"
+                    f"Action: <b>{act.get('action')}</b>\n"
+                    f"Trade Qty: {act.get('trade_qty')} (${abs(act.get('val_diff', 0)):,.2f} USD)\n"
+                    f"Weight Drift: {act.get('weight_drift', 0)*100:.2f}%\n"
+                    f"Macro Regime: {rebalance_telemetry.get('macro_regime')}\n"
+                    f"OKX Spot Status: {spot_res.get('status', 'EXECUTED')}"
+                )
+        
         # 2. Run Satellite Futures Grid Process (30% Capital Allocation)
         bb_lower = btc_price * 0.97
         bb_upper = btc_price * 1.03

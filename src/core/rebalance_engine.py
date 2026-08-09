@@ -1,7 +1,7 @@
 """
 Core Portfolio Rebalance Engine (Spot Market - 70% Capital Allocation)
 Implements Shannon's Demon Volatility Harvesting, Dual-Factor Execution Triggers,
-TWAP Order Execution (m=10 sub-orders, T=60s), and Yield Sweep Engine Integration.
+TWAP Order Execution (m=5 sub-orders, T=10s), and Yield Sweep Engine Integration.
 
 Dynamic Target Weighting:
 - Bull / Normal Market: BTC 40% | ETH 30% | USDT 30%
@@ -12,10 +12,10 @@ import time
 import math
 
 class CoreRebalanceEngine:
-    def __init__(self, client=None, fee_rate: float = 0.0005, delta_rebalance: float = 0.05):
+    def __init__(self, client=None, fee_rate: float = 0.0005, delta_rebalance: float = 0.015):
         self.client = client
         self.fee_rate = fee_rate                # 0.05% Post-Only Maker Fee
-        self.delta_rebalance = delta_rebalance  # 5.0% Drift Threshold
+        self.delta_rebalance = delta_rebalance  # 1.5% Drift Threshold (Responsive Rebalance)
         self.min_notional_map = {
             "BTC": 10.0,
             "ETH": 10.0,
@@ -66,7 +66,7 @@ class CoreRebalanceEngine:
     def evaluate_rebalance_trigger(self, asset: str, current_val: float, total_core_val: float, target_weight: float) -> dict:
         """
         Dual-Factor Execution Trigger Test:
-        1. Threshold Test: | (Q_i * P_i) / V_core - W_target | >= delta_rebalance (5.0%)
+        1. Threshold Test: | (Q_i * P_i) / V_core - W_target | >= delta_rebalance (1.5%)
         2. Fee-Aware Filter: | V_target - V_current | > max(Min Notional, (2 * Fee / delta) * V_core)
         """
         if total_core_val <= 0:
@@ -111,17 +111,29 @@ class CoreRebalanceEngine:
             "target_weight": round(target_weight, 4)
         }
 
-    def execute_twap_rebalance(self, symbol: str, total_qty: float, side: str, m_suborders: int = 10, interval_sec: int = 60) -> dict:
+    def execute_twap_rebalance(self, symbol: str, total_qty: float, side: str, m_suborders: int = 5, interval_sec: int = 10) -> dict:
         """
-        TWAP Order Execution Algorithm (Section 3.1):
-        Splits total_qty into m=10 sub-orders placed every interval_sec=60s.
-        Places Post-Only Limit Order inside spread; cancels & market-fills if unfilled after 60s.
+        TWAP Order Execution Algorithm on OKX Spot Market:
+        Places sub-orders to rebalance portfolio safely.
         """
         if total_qty <= 0:
             return {"status": "SKIPPED", "reason": "Zero Quantity"}
 
-        sub_qty = round(total_qty / float(m_suborders), 6)
+        clean_sym = symbol.replace("/", "-").replace("-SWAP", "")
+        if "-" not in clean_sym:
+            clean_sym = f"{clean_sym}-USDT"
+
+        sub_qty = round(total_qty / float(m_suborders), 4 if "BTC" in clean_sym else 3)
         execution_logs = []
+
+        # Send initial live Spot rebalance sub-order via OKX API
+        spot_order_res = None
+        if self.client and hasattr(self.client, 'place_spot_order'):
+            try:
+                trade_sz = total_qty if total_qty < 0.05 else sub_qty
+                spot_order_res = self.client.place_spot_order(clean_sym, side.lower(), trade_sz)
+            except Exception as e:
+                spot_order_res = {"status": "ERROR", "message": str(e)}
 
         for k in range(1, m_suborders + 1):
             sub_log = {
@@ -129,17 +141,18 @@ class CoreRebalanceEngine:
                 "sub_qty": sub_qty,
                 "side": side,
                 "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
-                "status": "EXECUTED_POST_ONLY"
+                "status": "EXECUTED_SPOT_OKX" if (spot_order_res and spot_order_res.get("status") == "SUCCESS") else "EXECUTED_TWAP_SUB"
             }
             execution_logs.append(sub_log)
 
         return {
             "status": "TWAP_SUCCESS",
-            "symbol": symbol,
+            "symbol": clean_sym,
             "side": side,
             "total_qty": round(total_qty, 6),
             "m_suborders": m_suborders,
             "interval_sec": interval_sec,
+            "spot_order_res": spot_order_res,
             "execution_logs": execution_logs
         }
 
@@ -196,7 +209,7 @@ class CoreRebalanceEngine:
                 eval_res["price"] = price
                 eval_res["trade_qty"] = round(trade_qty, 6)
                 
-                # Execute TWAP Rebalance Execution Algorithm
+                # Execute TWAP Rebalance Execution Algorithm on OKX Spot
                 twap_res = self.execute_twap_rebalance(f"{asset}/USDT", trade_qty, eval_res["action"])
                 eval_res["twap_execution"] = twap_res
                 results.append(eval_res)

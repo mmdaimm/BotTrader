@@ -468,6 +468,69 @@ class OKXClient:
             print(f"[OKXClient] Place algo order exception: {e}")
             return {"status": "ERROR", "message": str(e)}
 
+    def place_spot_order(self, symbol: str, side: str, sz: float, ord_type: str = "market") -> dict:
+        """
+        Place Spot Market/Limit Order on OKX Demo / Live API (POST /api/v5/trade/order).
+        symbol: e.g. 'BTC-USDT' or 'ETH-USDT'
+        side: 'buy' or 'sell'
+        tdMode: 'cash'
+        """
+        self._resolve_keys()
+        if not self.api_key or not self.api_secret or not self.passphrase:
+            return {"status": "ERROR", "message": "OKX API Keys missing on server"}
+
+        try:
+            path = "/api/v5/trade/order"
+            url = f"{self.host}{path}"
+            
+            clean_sym = symbol.replace("/", "-")
+            if not clean_sym.endswith("-SWAP") and "-" not in clean_sym:
+                clean_sym = f"{clean_sym}-USDT"
+            spot_inst = clean_sym.replace("-SWAP", "")
+
+            side_str = side.lower()
+            
+            if "BTC" in spot_inst:
+                sz_str = f"{float(sz):.4f}"
+            elif "ETH" in spot_inst:
+                sz_str = f"{float(sz):.3f}"
+            else:
+                sz_str = f"{float(sz):.2f}"
+
+            payload = {
+                "instId": spot_inst,
+                "tdMode": "cash",
+                "side": side_str,
+                "ordType": ord_type,
+                "sz": sz_str
+            }
+            if ord_type == "market" and side_str == "buy":
+                payload["tgtCcy"] = "base_ccy"
+
+            body_str = json.dumps(payload)
+            headers = self._get_headers("POST", path, body_str)
+            req_obj = urllib.request.Request(url, data=body_str.encode('utf-8'), headers=headers, method="POST")
+            with urllib.request.urlopen(req_obj, timeout=5) as resp:
+                d = json.loads(resp.read().decode())
+                if d.get("code") == "0" and d.get("data"):
+                    info = d["data"][0]
+                    s_code = str(info.get("sCode", "0"))
+                    if s_code == "0":
+                        return {
+                            "status": "SUCCESS",
+                            "order_id": info.get("ordId"),
+                            "symbol": spot_inst,
+                            "side": side_str,
+                            "sz": sz_str,
+                            "raw_response": d
+                        }
+                    else:
+                        return {"status": "API_ERROR", "code": s_code, "message": info.get("sMsg", "Spot order failed"), "raw_response": d}
+                return {"status": "API_ERROR", "code": d.get("code"), "message": d.get("msg", "OKX Spot order failed"), "raw_response": d}
+        except Exception as e:
+            print(f"[OKXClient] Place spot order exception for {symbol}: {e}")
+            return {"status": "ERROR", "message": str(e)}
+
     def get_positions(self, instType: str = "SWAP") -> dict:
         """Fetch active positions from OKX (GET /api/v5/account/positions)."""
         self._resolve_keys()
