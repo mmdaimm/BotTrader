@@ -289,12 +289,11 @@ class OKXClient:
             print(f"[OKXClient] Place algo order exception: {e}")
             return {"status": "ERROR", "message": str(e)}
 
-    def place_spot_order(self, symbol: str, side: str, sz: float, ord_type: str = "market") -> dict:
+    def place_spot_order(self, symbol: str, side: str, sz: float, val_usd: float = None, ord_type: str = "market") -> dict:
         """
-        Place Spot Market/Limit Order on OKX Demo / Live API (POST /api/v5/trade/order).
-        symbol: e.g. 'BTC-USDT' or 'ETH-USDT'
-        side: 'buy' or 'sell'
-        tdMode: 'cash'
+        Place Spot Market Order on OKX Demo / Live API (POST /api/v5/trade/order).
+        Supports Multi-Mode Robust Execution Pipeline (tdMode: 'cross' for Single-currency margin / 'cash' for Cash mode).
+        Handles quote_ccy (USDT) for market BUY and base_ccy for market SELL.
         """
         self._resolve_keys()
         if not self.api_key or not self.api_secret or not self.passphrase:
@@ -311,43 +310,62 @@ class OKXClient:
 
             side_str = side.lower()
             
+            # Format quantity
             if "BTC" in spot_inst:
-                sz_str = f"{float(sz):.4f}"
+                sz_coin_str = f"{float(sz):.4f}"
             elif "ETH" in spot_inst:
-                sz_str = f"{float(sz):.3f}"
+                sz_coin_str = f"{float(sz):.3f}"
             else:
-                sz_str = f"{float(sz):.2f}"
+                sz_coin_str = f"{float(sz):.2f}"
 
-            payload = {
-                "instId": spot_inst,
-                "tdMode": "cash",
-                "side": side_str,
-                "ordType": ord_type,
-                "sz": sz_str
-            }
-            if ord_type == "market" and side_str == "buy":
-                payload["tgtCcy"] = "base_ccy"
+            usdt_amt_str = f"{float(val_usd):.2f}" if (val_usd and float(val_usd) > 0) else None
 
-            body_str = json.dumps(payload)
-            headers = self._get_headers("POST", path, body_str)
-            req_obj = urllib.request.Request(url, data=body_str.encode('utf-8'), headers=headers, method="POST")
-            with urllib.request.urlopen(req_obj, timeout=5) as resp:
-                d = json.loads(resp.read().decode())
-                if d.get("code") == "0" and d.get("data"):
-                    info = d["data"][0]
-                    s_code = str(info.get("sCode", "0"))
-                    if s_code == "0":
-                        return {
-                            "status": "SUCCESS",
-                            "order_id": info.get("ordId"),
-                            "symbol": spot_inst,
-                            "side": side_str,
-                            "sz": sz_str,
-                            "raw_response": d
-                        }
-                    else:
-                        return {"status": "API_ERROR", "code": s_code, "message": info.get("sMsg", "Spot order failed"), "raw_response": d}
-                return {"status": "API_ERROR", "code": d.get("code"), "message": d.get("msg", "OKX Spot order failed"), "raw_response": d}
+            def _execute_spot_payload(p_dict):
+                b_str = json.dumps(p_dict)
+                hdrs = self._get_headers("POST", path, b_str)
+                req_obj = urllib.request.Request(url, data=b_str.encode('utf-8'), headers=hdrs, method="POST")
+                with urllib.request.urlopen(req_obj, timeout=5) as resp:
+                    d = json.loads(resp.read().decode())
+                    if d.get("code") == "0" and d.get("data"):
+                        info = d["data"][0]
+                        s_code = str(info.get("sCode", "0"))
+                        if s_code == "0":
+                            return {
+                                "status": "SUCCESS",
+                                "order_id": info.get("ordId"),
+                                "symbol": spot_inst,
+                                "side": side_str,
+                                "raw_response": d
+                            }
+                        else:
+                            return {"status": "API_ERROR", "code": s_code, "message": info.get("sMsg", "Spot order failed"), "raw_response": d}
+                    return {"status": "API_ERROR", "code": d.get("code"), "message": d.get("msg", "OKX Spot order failed"), "raw_response": d}
+
+            # Multi-Stage Robust Spot Execution Pipeline:
+            stages = []
+            if side_str == "buy":
+                if usdt_amt_str:
+                    stages.append({"instId": spot_inst, "tdMode": "cross", "side": "buy", "ordType": "market", "sz": usdt_amt_str, "tgtCcy": "quote_ccy"})
+                    stages.append({"instId": spot_inst, "tdMode": "cash", "side": "buy", "ordType": "market", "sz": usdt_amt_str, "tgtCcy": "quote_ccy"})
+                stages.append({"instId": spot_inst, "tdMode": "cross", "side": "buy", "ordType": "market", "sz": sz_coin_str, "tgtCcy": "base_ccy"})
+                stages.append({"instId": spot_inst, "tdMode": "cash", "side": "buy", "ordType": "market", "sz": sz_coin_str, "tgtCcy": "base_ccy"})
+                stages.append({"instId": spot_inst, "tdMode": "cross", "side": "buy", "ordType": "market", "sz": sz_coin_str})
+                stages.append({"instId": spot_inst, "tdMode": "cash", "side": "buy", "ordType": "market", "sz": sz_coin_str})
+            else:
+                stages.append({"instId": spot_inst, "tdMode": "cross", "side": "sell", "ordType": "market", "sz": sz_coin_str})
+                stages.append({"instId": spot_inst, "tdMode": "cash", "side": "sell", "ordType": "market", "sz": sz_coin_str})
+                stages.append({"instId": spot_inst, "tdMode": "cross", "side": "sell", "ordType": "market", "sz": sz_coin_str, "tgtCcy": "base_ccy"})
+                stages.append({"instId": spot_inst, "tdMode": "cash", "side": "sell", "ordType": "market", "sz": sz_coin_str, "tgtCcy": "base_ccy"})
+
+            last_res = None
+            for idx, stage_p in enumerate(stages, 1):
+                res = _execute_spot_payload(stage_p)
+                if res.get("status") == "SUCCESS":
+                    res["stage_success"] = idx
+                    return res
+                last_res = res
+
+            return last_res if last_res else {"status": "ERROR", "message": "All spot stages failed"}
         except Exception as e:
             print(f"[OKXClient] Place spot order exception for {symbol}: {e}")
             return {"status": "ERROR", "message": str(e)}

@@ -111,7 +111,7 @@ class CoreRebalanceEngine:
             "target_weight": round(target_weight, 4)
         }
 
-    def execute_twap_rebalance(self, symbol: str, total_qty: float, side: str, m_suborders: int = 5, interval_sec: int = 10) -> dict:
+    def execute_twap_rebalance(self, symbol: str, total_qty: float, side: str, val_usd: float = None, m_suborders: int = 5, interval_sec: int = 10) -> dict:
         """
         TWAP Order Execution Algorithm on OKX Spot Market:
         Places sub-orders to rebalance portfolio safely.
@@ -124,6 +124,7 @@ class CoreRebalanceEngine:
             clean_sym = f"{clean_sym}-USDT"
 
         sub_qty = round(total_qty / float(m_suborders), 4 if "BTC" in clean_sym else 3)
+        sub_val = round(val_usd / float(m_suborders), 2) if (val_usd and val_usd > 0) else None
         execution_logs = []
 
         # Send initial live Spot rebalance sub-order via OKX API
@@ -131,7 +132,8 @@ class CoreRebalanceEngine:
         if self.client and hasattr(self.client, 'place_spot_order'):
             try:
                 trade_sz = total_qty if total_qty < 0.05 else sub_qty
-                spot_order_res = self.client.place_spot_order(clean_sym, side.lower(), trade_sz)
+                trade_val = val_usd if total_qty < 0.05 else sub_val
+                spot_order_res = self.client.place_spot_order(clean_sym, side.lower(), trade_sz, val_usd=trade_val)
             except Exception as e:
                 spot_order_res = {"status": "ERROR", "message": str(e)}
 
@@ -150,6 +152,7 @@ class CoreRebalanceEngine:
             "symbol": clean_sym,
             "side": side,
             "total_qty": round(total_qty, 6),
+            "val_usd": round(val_usd, 2) if val_usd else None,
             "m_suborders": m_suborders,
             "interval_sec": interval_sec,
             "spot_order_res": spot_order_res,
@@ -205,12 +208,13 @@ class CoreRebalanceEngine:
             eval_res = self.evaluate_rebalance_trigger(asset, curr_val, v_core, target_w)
             if eval_res.get("triggered"):
                 price = btc_price if asset == "BTC" else eth_price
-                trade_qty = abs(eval_res["val_diff"]) / price
+                abs_val = abs(eval_res["val_diff"])
+                trade_qty = abs_val / price
                 eval_res["price"] = price
                 eval_res["trade_qty"] = round(trade_qty, 6)
                 
                 # Execute TWAP Rebalance Execution Algorithm on OKX Spot
-                twap_res = self.execute_twap_rebalance(f"{asset}/USDT", trade_qty, eval_res["action"])
+                twap_res = self.execute_twap_rebalance(f"{asset}/USDT", trade_qty, eval_res["action"], val_usd=abs_val)
                 eval_res["twap_execution"] = twap_res
                 results.append(eval_res)
 
