@@ -127,9 +127,31 @@ class CoreRebalanceEngine:
         sub_val = round(val_usd / float(m_suborders), 2) if (val_usd and val_usd > 0) else None
         execution_logs = []
 
-        # Send initial live Spot rebalance sub-order via OKX API
+        # Real Balance Validation: Check exchange balance before attempting a Spot SELL
         spot_order_res = None
-        if self.client and hasattr(self.client, 'place_spot_order'):
+        coin_ccy = clean_sym.split("-")[0]
+        
+        can_execute = True
+        if side.upper() == "SELL" and self.client and hasattr(self.client, 'get_account_balance'):
+            try:
+                bal_data = self.client.get_account_balance()
+                details = bal_data.get("currency_details", [])
+                coin_avail = 0.0
+                for d in details:
+                    if d.get("ccy") == coin_ccy:
+                        coin_avail = float(d.get("availBal") or d.get("cashBal") or d.get("eq") or 0.0)
+                        break
+                if coin_avail < (0.0001 if coin_ccy == "BTC" else 0.001):
+                    can_execute = False
+                    spot_order_res = {
+                        "status": "SKIPPED_NO_BALANCE",
+                        "message": f"Insufficient {coin_ccy} Spot balance on OKX ({coin_avail} {coin_ccy} available)"
+                    }
+            except Exception as e:
+                pass
+
+        # Send initial live Spot rebalance sub-order via OKX API if balance is sufficient
+        if can_execute and self.client and hasattr(self.client, 'place_spot_order'):
             try:
                 trade_sz = total_qty if total_qty < 0.05 else sub_qty
                 trade_val = val_usd if total_qty < 0.05 else sub_val
@@ -143,7 +165,7 @@ class CoreRebalanceEngine:
                 "sub_qty": sub_qty,
                 "side": side,
                 "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
-                "status": "EXECUTED_SPOT_OKX" if (spot_order_res and spot_order_res.get("status") == "SUCCESS") else "EXECUTED_TWAP_SUB"
+                "status": "EXECUTED_SPOT_OKX" if (spot_order_res and spot_order_res.get("status") == "SUCCESS") else ("SKIPPED_NO_BALANCE" if not can_execute else "EXECUTED_TWAP_SUB")
             }
             execution_logs.append(sub_log)
 

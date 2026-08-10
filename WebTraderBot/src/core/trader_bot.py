@@ -574,19 +574,21 @@ class TraderBot:
             btc_qty, btc_price, eth_qty, eth_price, usdt_cash, btc_ema200_1d
         )
         
-        # Send Spot Rebalance Telegram Notification if executed
+        # Send Spot Rebalance Telegram Notification ONLY if executed successfully on OKX
         for act in rebalance_telemetry.get("rebalance_actions", []):
             if act.get("triggered"):
                 spot_res = act.get("twap_execution", {}).get("spot_order_res", {})
-                self.notifier.send_message(
-                    f"<b>⚖️ [OKX SPOT REBALANCE EXECUTED]</b>\n"
-                    f"Asset: <b>{act.get('asset')}/USDT (Spot)</b>\n"
-                    f"Action: <b>{act.get('action')}</b>\n"
-                    f"Trade Qty: {act.get('trade_qty')} (${abs(act.get('val_diff', 0)):,.2f} USD)\n"
-                    f"Weight Drift: {act.get('weight_drift', 0)*100:.2f}%\n"
-                    f"Macro Regime: {rebalance_telemetry.get('macro_regime')}\n"
-                    f"OKX Spot Status: {spot_res.get('status', 'EXECUTED')}"
-                )
+                if spot_res and spot_res.get("status") == "SUCCESS":
+                    self.notifier.send_message(
+                        f"<b>⚖️ [OKX SPOT REBALANCE EXECUTED]</b>\n"
+                        f"Asset: <b>{act.get('asset')}/USDT (Spot)</b>\n"
+                        f"Action: <b>{act.get('action')}</b>\n"
+                        f"Trade Qty: {act.get('trade_qty')} (${abs(act.get('val_diff', 0)):,.2f} USD)\n"
+                        f"Weight Drift: {act.get('weight_drift', 0)*100:.2f}%\n"
+                        f"Macro Regime: {rebalance_telemetry.get('macro_regime')}\n"
+                        f"OKX Order ID: {spot_res.get('order_id', 'N/A')}\n"
+                        f"OKX Spot Status: <b>SUCCESS 🟢</b>"
+                    )
         
         # 2. Run Satellite Futures Grid Process (30% Capital Allocation)
         bb_lower = btc_price * 0.97

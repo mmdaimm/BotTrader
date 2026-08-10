@@ -63,10 +63,10 @@ class TraderBot:
         self.trading_mode = "PAPER"  # "PAPER" or "LIVE"
         self.bot_state = "RUNNING"   # "RUNNING", "PAUSED", "ERROR"
         
-        # Sideway Scalping & Grid Engine State (Enabled by Default)
-        self.sideway_mode_enabled = True
-        self.sideway_state = "ACTIVE"
-        self.db.save_bot_state(self.bot_state, self.trading_mode, initial_capital, self.satellite_capital_30, 3, 1, "ACTIVE")
+        # Sideway Engine State & Config
+        db_state = self.db.get_bot_state()
+        self.sideway_mode_enabled = bool(db_state.get("sideway_mode_enabled", 0))
+        self.sideway_state = db_state.get("sideway_state", "DISABLED")
         
         self.last_signals_sent = {}  # { symbol: signal_key }
         self.symbol_lockouts = {}    # { symbol: lockout_until_timestamp }
@@ -212,21 +212,12 @@ class TraderBot:
         }
 
     def evaluate_sideway_signal(self, symbol: str, candles_15m: list) -> dict:
-        """
-        Optimized 15m/1H Scalping Engine (Zone Touch & RSI Trigger):
-        - LONG: Current Price <= Lower Band * 1.001 AND RSI(14) < 42.0
-        - SHORT: Current Price >= Upper Band * 0.999 AND RSI(14) > 58.0
-        - Capital Allocation Cap: $600 USD Total Margin / Max 4 Active Positions
-        - Ensures 1-2 high-probability trades daily on active crypto assets!
-        """
         if not candles_15m or len(candles_15m) < 30:
             return {"symbol": symbol, "signal": "NONE", "reason": "Insufficient 15m candles"}
 
-        # Graceful Disabling Check: If sideway_state is "STOPPING" or "DISABLED", block new entries
         if not self.sideway_mode_enabled or self.sideway_state == "STOPPING":
             return {"symbol": symbol, "signal": "NONE", "reason": "Sideway Engine OFF or Stopping"}
 
-        # Capital Quota Guard: Sideway total margin cap <= $600 USD and max 4 active Scalping positions
         active_sideway_positions = [
             p for p in self.paper_engine.active_positions.values() 
             if p.get("strategy_type") == "SIDEWAY_15M"
@@ -243,7 +234,6 @@ class TraderBot:
         adx_list = TechnicalIndicators.calculate_adx(candles_15m, 14)
         adx_val = adx_list[-1] if adx_list else 20.0
 
-        # ADX Regime Guard: Require ADX < 30.0 (Optimized for Zone Touch Scalping)
         if adx_val >= 30.0:
             return {"symbol": symbol, "signal": "NONE", "reason": f"ADX too high ({adx_val:.1f} >= 30.0) - Strong Trend Detected"}
 
@@ -252,7 +242,6 @@ class TraderBot:
 
         atr_val = TechnicalIndicators.calculate_atr(candles_15m, 14)[-1]
 
-        # Calculate Bollinger Bands (20, 2.0)
         sma20 = TechnicalIndicators.calculate_sma(closes, 20)
         sma20_curr = sma20[-1]
         
@@ -265,11 +254,7 @@ class TraderBot:
 
         curr_close = closes[-1]
 
-        # Zone Touch & RSI Trigger:
-        # LONG: Current Price <= Lower Band * 1.001 (Touch or breach) AND RSI < 42.0
         is_long_touch = (curr_close <= lower_band * 1.001) and (rsi_val < 42.0)
-
-        # SHORT: Current Price >= Upper Band * 0.999 (Touch or breach) AND RSI > 58.0
         is_short_touch = (curr_close >= upper_band * 0.999) and (rsi_val > 58.0)
 
         market_snapshot = {
@@ -313,37 +298,6 @@ class TraderBot:
 
         return {"symbol": symbol, "signal": "NONE", "reason": "No zone touch", "market_snapshot": market_snapshot}
 
-    def set_sideway_mode(self, enabled: bool):
-        if enabled:
-            self.sideway_mode_enabled = True
-            self.sideway_state = "ACTIVE"
-            msg = "🟢 โหมด 15m Sideway Range Scalping เปิดการทำงานแล้ว (ACTIVE)"
-        else:
-            active_sd_positions = [
-                p for p in self.paper_engine.active_positions.values() 
-                if p.get("strategy_type") == "SIDEWAY_15M"
-            ]
-            if active_sd_positions:
-                self.sideway_mode_enabled = True
-                self.sideway_state = "STOPPING"
-                msg = f"🟡 โหมด 15m Sideway Range Scalping กำลังปิด (STOPPING) — มีออเดอร์ค้าง {len(active_sd_positions)} รายการ ระบบจะรอยิงปิด TP/SL อัตโนมัติก่อนเคลียร์เข้าสภาวะ DISABLED"
-            else:
-                self.sideway_mode_enabled = False
-                self.sideway_state = "DISABLED"
-                msg = "⚪ โหมด 15m Sideway Range Scalping ปิดการทำงานเรียบร้อยแล้ว (DISABLED)"
-
-        self.db.save_bot_state(
-            self.bot_state, self.trading_mode, self.initial_capital,
-            self.paper_engine.current_capital, self.paper_engine.leverage,
-            1 if self.sideway_mode_enabled else 0, self.sideway_state
-        )
-        return {
-            "status": "SUCCESS",
-            "sideway_mode_enabled": self.sideway_mode_enabled,
-            "sideway_state": self.sideway_state,
-            "message": msg
-        }
-
     def run_single_iteration(self) -> dict:
         pair_results = {}
         opened_symbols_this_iteration = set()
@@ -372,7 +326,6 @@ class TraderBot:
                         risk = self.risk_engine.calculate_position_sizing(
                             self.paper_engine.current_capital, last_price, atr, side=side
                         )
-                        # 1. Submit REAL order directly to OKX Demo API
                         okx_order_res = self.client.place_market_order(
                             symbol=sym,
                             side=side,
@@ -407,7 +360,6 @@ class TraderBot:
 
                             sd_eval = self.evaluate_sideway_signal(sym, candles_15m)
                             if sd_eval.get("signal") in ["LONG", "SHORT"]:
-                                # 1. Submit REAL order directly to OKX Demo API
                                 okx_sd_res = self.client.place_market_order(
                                     symbol=sym,
                                     side=sd_eval["signal"],
@@ -472,19 +424,21 @@ class TraderBot:
             btc_qty, btc_price, eth_qty, eth_price, usdt_cash, btc_ema200_1d
         )
         
-        # Send Spot Rebalance Telegram Notification if executed
+        # Send Spot Rebalance Telegram Notification ONLY if executed successfully on OKX
         for act in rebalance_telemetry.get("rebalance_actions", []):
             if act.get("triggered"):
                 spot_res = act.get("twap_execution", {}).get("spot_order_res", {})
-                self.notifier.send_message(
-                    f"<b>⚖️ [OKX SPOT REBALANCE EXECUTED]</b>\n"
-                    f"Asset: <b>{act.get('asset')}/USDT (Spot)</b>\n"
-                    f"Action: <b>{act.get('action')}</b>\n"
-                    f"Trade Qty: {act.get('trade_qty')} (${abs(act.get('val_diff', 0)):,.2f} USD)\n"
-                    f"Weight Drift: {act.get('weight_drift', 0)*100:.2f}%\n"
-                    f"Macro Regime: {rebalance_telemetry.get('macro_regime')}\n"
-                    f"OKX Spot Status: {spot_res.get('status', 'EXECUTED')}"
-                )
+                if spot_res and spot_res.get("status") == "SUCCESS":
+                    self.notifier.send_message(
+                        f"<b>⚖️ [OKX SPOT REBALANCE EXECUTED]</b>\n"
+                        f"Asset: <b>{act.get('asset')}/USDT (Spot)</b>\n"
+                        f"Action: <b>{act.get('action')}</b>\n"
+                        f"Trade Qty: {act.get('trade_qty')} (${abs(act.get('val_diff', 0)):,.2f} USD)\n"
+                        f"Weight Drift: {act.get('weight_drift', 0)*100:.2f}%\n"
+                        f"Macro Regime: {rebalance_telemetry.get('macro_regime')}\n"
+                        f"OKX Order ID: {spot_res.get('order_id', 'N/A')}\n"
+                        f"OKX Spot Status: <b>SUCCESS 🟢</b>"
+                    )
         
         # 2. Run Satellite Futures Grid Process (30% Capital Allocation)
         bb_lower = btc_price * 0.97
