@@ -1,6 +1,6 @@
 """
-Trading Bot Engine Loop with OKX Perpetual Futures & Dual-Direction Trading (LONG & SHORT)
-Enforces 70/30 Enterprise Core-Satellite Architecture (Spot Rebalance + Futures Geometric Grid).
+Trading Bot Engine Loop with OKX Perpetual Futures & 15m Range Scalping (Zone Touch + RSI)
+Enforces 70/30 Enterprise Core-Satellite Architecture (Spot Rebalance + 15m Scalping Grid).
 """
 
 import time
@@ -40,7 +40,7 @@ class TraderBot:
             "ALGO-USDT-SWAP"
         ]
         self.resolution = resolution  # "240" (4H)
-        self.timeframe_str = "4h"
+        self.timeframe_str = "15m"
         self.client = OKXClient()
         self.risk_engine = RiskEngine()
         self.notifier = TelegramNotifier()
@@ -63,10 +63,9 @@ class TraderBot:
         self.trading_mode = "PAPER"  # "PAPER" or "LIVE"
         self.bot_state = "RUNNING"   # "RUNNING", "PAUSED", "ERROR"
         
-        # Sideway Engine State & Config
-        db_state = self.db.get_bot_state()
-        self.sideway_mode_enabled = bool(db_state.get("sideway_mode_enabled", 0))
-        self.sideway_state = db_state.get("sideway_state", "DISABLED")
+        # 15m Range Scalping Engine State (Default ACTIVE)
+        self.sideway_mode_enabled = True
+        self.sideway_state = "ACTIVE"
         
         self.last_signals_sent = {}  # { symbol: signal_key }
         self.symbol_lockouts = {}    # { symbol: lockout_until_timestamp }
@@ -94,8 +93,8 @@ class TraderBot:
                             "id": f"OKX-{sym}-{pos_side}",
                             "symbol": sym,
                             "side": pos_side,
-                            "timeframe": "4h",
-                            "strategy_type": "SWING_4H",
+                            "timeframe": "15m",
+                            "strategy_type": "SIDEWAY_15M",
                             "leverage": int(float(p.get("lever", 3) or 3)),
                             "entry_price": entry_px,
                             "qty": abs(p_size),
@@ -124,94 +123,13 @@ class TraderBot:
                         del self.active_monitor.last_sent_timestamps[sym]
                     self.paper_engine._save_state()
 
-    def evaluate_pair_signal(self, symbol: str, candles: list) -> dict:
-        if not candles or len(candles) < 200:
-            return {"symbol": symbol, "signal": "NONE", "reason": "Insufficient 4H candles"}
-            
-        closes = [c["close"] for c in candles]
-        prev_price = closes[-2]
-        ema50_4h = TechnicalIndicators.calculate_ema(closes, 50)[-2]
-        ema200_4h = TechnicalIndicators.calculate_ema(closes, 200)[-2]
-        st_list = TechnicalIndicators.calculate_supertrend(candles, period=10, multiplier=3.0)
-        curr_st = st_list[-2]
-        prev_st = st_list[-3] if len(st_list) >= 3 else curr_st
-        
-        adx_list = TechnicalIndicators.calculate_adx(candles, 14)
-        adx_val = adx_list[-2] if len(adx_list) >= 2 else 20.0
-        atr_val = TechnicalIndicators.calculate_atr(candles, 14)[-2]
-        
-        current_price = closes[-1]
-        
-        market_snapshot = {
-            "strategy_type": "SWING_4H",
-            "timeframe": self.timeframe_str,
-            "ema50_4h": round(ema50_4h, 4),
-            "ema200_4h": round(ema200_4h, 4),
-            "supertrend": curr_st["supertrend"],
-            "st_direction": "GREEN" if curr_st["direction"] == 1 else "RED",
-            "adx": round(adx_val, 2),
-            "atr_4h": round(atr_val, 4)
-        }
-        
-        now_ts = time.time()
-        if symbol in self.symbol_lockouts:
-            if now_ts < self.symbol_lockouts[symbol]:
-                rem_mins = int((self.symbol_lockouts[symbol] - now_ts) / 60)
-                return {
-                    "symbol": symbol,
-                    "signal": "NONE",
-                    "reason": f"8-hour SL cooldown active ({rem_mins}m remaining)",
-                    "market_snapshot": market_snapshot
-                }
-            else:
-                del self.symbol_lockouts[symbol]
-
-        if symbol in self.paper_engine.active_positions:
-            return {
-                "symbol": symbol,
-                "signal": "NONE",
-                "reason": f"Position already active for {symbol}",
-                "market_snapshot": market_snapshot
-            }
-            
-        if adx_val < 15.0:
-            return {
-                "symbol": symbol,
-                "signal": "NONE",
-                "reason": f"ADX ({adx_val:.2f}) < 15.0 threshold (Weak trend)",
-                "market_snapshot": market_snapshot
-            }
-            
-        is_st_flip_green = (prev_st["direction"] == -1 and curr_st["direction"] == 1)
-        if is_st_flip_green and prev_price > ema200_4h:
-            return {
-                "symbol": symbol,
-                "signal": "LONG",
-                "entry_price": current_price,
-                "atr": atr_val,
-                "market_snapshot": market_snapshot,
-                "reason": "4H Supertrend flipped GREEN + Price > EMA200 + ADX > 15"
-            }
-            
-        is_st_flip_red = (prev_st["direction"] == 1 and curr_st["direction"] == -1)
-        if is_st_flip_red and prev_price < ema200_4h:
-            return {
-                "symbol": symbol,
-                "signal": "SHORT",
-                "entry_price": current_price,
-                "atr": atr_val,
-                "market_snapshot": market_snapshot,
-                "reason": "4H Supertrend flipped RED + Price < EMA200 + ADX > 15"
-            }
-
-        return {
-            "symbol": symbol,
-            "signal": "NONE",
-            "reason": "No entry setup",
-            "market_snapshot": market_snapshot
-        }
-
     def evaluate_sideway_signal(self, symbol: str, candles_15m: list) -> dict:
+        """
+        15m Scalping Engine (Zone Touch & RSI Trigger):
+        - LONG: Current Price <= Lower Band * 1.001 AND RSI(14) < 42.0
+        - SHORT: Current Price >= Upper Band * 0.999 AND RSI(14) > 58.0
+        - Dynamic TP Target: 15m SMA20 (Middle Band)
+        """
         if not candles_15m or len(candles_15m) < 30:
             return {"symbol": symbol, "signal": "NONE", "reason": "Insufficient 15m candles"}
 
@@ -299,86 +217,51 @@ class TraderBot:
         return {"symbol": symbol, "signal": "NONE", "reason": "No zone touch", "market_snapshot": market_snapshot}
 
     def run_single_iteration(self) -> dict:
-        pair_results = {}
         opened_symbols_this_iteration = set()
-        
-        # 1. Live position sync & auto-purge
-        try:
-            self.sync_live_exchange_positions()
-        except Exception as e:
-            print(f"[TraderBot] Sync error: {e}")
-
+        pair_results = {}
         for sym in self.symbols:
             try:
-                candles_4h = self.client.get_candles(symbol=sym, resolution="240", limit=300)
-                if candles_4h:
-                    last_price = candles_4h[-1]["close"]
-                    swing_eval = self.evaluate_pair_signal(sym, candles_4h)
+                # 1. Primary Strategy: 15m Range Scalping Engine (Zone Touch & RSI Trigger)
+                candles_15m = self.client.get_candles(symbol=sym, resolution="15m", limit=50)
+                if candles_15m:
+                    last_price = candles_15m[-1]["close"]
+                    closes_15m = [c["close"] for c in candles_15m]
+                    sma20 = TechnicalIndicators.calculate_sma(closes_15m, 20)[-1]
                     
+                    # Dynamic TP Update for active Sideway trades
+                    self.paper_engine.update_dynamic_sideway_tps(sym, sma20)
+
+                    sd_eval = self.evaluate_sideway_signal(sym, candles_15m)
                     pair_results[sym] = {
                         "last_price": last_price,
-                        "eval": swing_eval
+                        "eval": sd_eval
                     }
 
-                    if swing_eval.get("signal") in ["LONG", "SHORT"]:
-                        side = swing_eval["signal"]
-                        atr = swing_eval["atr"]
-                        risk = self.risk_engine.calculate_position_sizing(
-                            self.paper_engine.current_capital, last_price, atr, side=side
-                        )
-                        okx_order_res = self.client.place_market_order(
-                            symbol=sym,
-                            side=side,
-                            sz=1.0,
-                            sl_price=risk["sl_price"],
-                            tp_price=risk["tp_price"]
-                        )
-                        open_res = self.paper_engine.open_position(
-                            symbol=sym,
-                            side=side,
-                            entry_price=last_price,
-                            sl_price=risk["sl_price"],
-                            tp1_target=risk["tp_price"],
-                            market_snapshot=swing_eval["market_snapshot"]
-                        )
-                        if open_res.get("status") == "SUCCESS":
-                            opened_symbols_this_iteration.add(sym)
-                            self.notifier.send_message(
-                                f"<b>🚀 [OKX SWING 4H ORDER PLACED]</b>\n"
-                                f"Asset: <b>{sym}</b> ({side})\n"
-                                f"Entry: ${last_price:,.4f}\n"
-                                f"SL: ${risk['sl_price']:,.4f} | TP1: ${risk['tp_price']:,.4f}\n"
-                                f"OKX Status: {okx_order_res.get('status')}"
-                            )
-
-                    candles_15m = self.client.get_candles(symbol=sym, resolution="15m", limit=50)
-                    if candles_15m and self.sideway_mode_enabled and self.sideway_state == "ACTIVE":
+                    if self.sideway_mode_enabled and self.sideway_state == "ACTIVE":
                         if sym not in opened_symbols_this_iteration and sym not in self.paper_engine.active_positions:
-                            closes_15m = [c["close"] for c in candles_15m]
-                            sma20 = TechnicalIndicators.calculate_sma(closes_15m, 20)[-1]
-                            self.paper_engine.update_dynamic_sideway_tps(sym, sma20)
-
-                            sd_eval = self.evaluate_sideway_signal(sym, candles_15m)
                             if sd_eval.get("signal") in ["LONG", "SHORT"]:
+                                side = sd_eval["signal"]
+                                # 1. Submit REAL order directly to OKX Demo API
                                 okx_sd_res = self.client.place_market_order(
                                     symbol=sym,
-                                    side=sd_eval["signal"],
+                                    side=side,
                                     sz=1.0,
                                     sl_price=sd_eval["sl_price"],
                                     tp_price=sd_eval["tp1_target"]
                                 )
                                 self.paper_engine.open_position(
                                     symbol=sym,
-                                    side=sd_eval["signal"],
+                                    side=side,
                                     entry_price=sd_eval["entry_price"],
                                     sl_price=sd_eval["sl_price"],
                                     tp1_target=sd_eval["tp1_target"],
                                     market_snapshot=sd_eval["market_snapshot"],
                                     id_prefix=sd_eval.get("id_prefix", "SD-")
                                 )
+                                opened_symbols_this_iteration.add(sym)
                                 self.notifier.send_message(
                                     f"<b>🚀 [OKX SCALPING 15M ORDER PLACED]</b>\n"
-                                    f"Asset: <b>{sym}</b> ({sd_eval['signal']})\n"
+                                    f"Asset: <b>{sym}</b> ({side})\n"
                                     f"Entry Price: ${sd_eval['entry_price']:,.4f}\n"
                                     f"TP Target: ${sd_eval['tp1_target']:,.4f} | SL: ${sd_eval['sl_price']:,.4f}\n"
                                     f"OKX Status: {okx_sd_res.get('status')}"
@@ -387,33 +270,70 @@ class TraderBot:
             except Exception as e:
                 print(f"[TraderBot] Error scanning OKX pair {sym}: {e}")
 
+        # Update and Check Take Profit / Stop Loss triggers
         try:
-            closed_trades = self.paper_engine.update_positions(pair_results)
-            for closed in closed_trades:
-                tag = "[SIDEWAY 15M]" if closed.get("id", "").startswith("SD-") or closed.get("strategy_type") == "SIDEWAY_15M" else "[SWING 4H]"
-                pnl_msg = f"<b>{tag} {closed['side']} {closed['type']}</b>\nAsset: {closed['symbol']}\nNet PnL: ${closed['net_pnl']} ({closed['pnl_pct']}%)"
-                self.notifier.send_message(pnl_msg)
-                if "SL" in closed.get("type", ""):
-                    self.symbol_lockouts[closed["symbol"]] = time.time() + (8 * 3600)
+            # Auto-close on OKX exchange when TP or SL is touched
+            for sym, pos in list(self.paper_engine.active_positions.items()):
+                curr_item = pair_results.get(sym, {})
+                curr_p = curr_item.get("last_price")
+                if not curr_p:
+                    continue
+                pos_side = pos.get("side", "LONG")
+                tp_target = pos.get("tp1_target", pos.get("tp_price", 0.0))
+                sl_target = pos.get("sl_price", 0.0)
+                
+                hit_tp = (curr_p >= tp_target if pos_side == "LONG" else curr_p <= tp_target) if tp_target > 0 else False
+                hit_sl = (curr_p <= sl_target if pos_side == "LONG" else curr_p >= sl_target) if sl_target > 0 else False
+                
+                if hit_tp or hit_sl:
+                    close_tag = "TAKE PROFIT (TP)" if hit_tp else "STOP LOSS (SL)"
+                    # Send Close order to OKX Exchange
+                    self.client.close_position_on_okx(sym, pos_side, td_mode="cross")
+                    
+                    pnl_val = (curr_p - pos["entry_price"]) * pos["qty"] if pos_side == "LONG" else (pos["entry_price"] - curr_p) * pos["qty"]
+                    pnl_pct = (pnl_val / pos.get("margin_required", 100.0)) * 100.0
+                    
+                    now_struct = time.localtime()
+                    trade_rec = {
+                        "id": f"SCALP-EXIT-{sym}-{int(time.time())}",
+                        "symbol": sym,
+                        "side": pos_side,
+                        "type": f"{pos_side} {close_tag}",
+                        "timeframe": "15m",
+                        "strategy_type": "SIDEWAY_15M",
+                        "leverage": pos.get("leverage", 3),
+                        "entry_price": pos["entry_price"],
+                        "exit_price": curr_p,
+                        "qty": pos["qty"],
+                        "net_pnl": round(pnl_val, 2),
+                        "pnl_pct": round(pnl_pct, 2),
+                        "holding_duration_formatted": "15m Scalp",
+                        "entry_time": pos.get("entry_time", time.strftime("%Y-%m-%d %H:%M:%S", now_struct)),
+                        "exit_time": time.strftime("%Y-%m-%d %H:%M:%S", now_struct),
+                        "day_of_week": time.strftime("%A", now_struct),
+                        "hour_of_day": now_struct.tm_hour
+                    }
+                    self.paper_engine.trade_history.insert(0, trade_rec)
+                    if sym in self.paper_engine.active_positions:
+                        del self.paper_engine.active_positions[sym]
+                    self.paper_engine._save_state()
+                    
+                    self.notifier.send_message(
+                        f"<b>🎯 [15M SCALPING {close_tag} EXECUTED]</b>\n"
+                        f"Asset: <b>{sym}</b> ({pos_side})\n"
+                        f"Exit Price: ${curr_p:,.4f}\n"
+                        f"Net PnL: <b>${pnl_val:,.2f} USD ({pnl_pct:+.2f}%)</b>"
+                    )
+
         except Exception as e:
-            print(f"[TraderBot] Error updating paper positions: {e}")
+            print(f"[TraderBot] Error updating 15m scalping positions: {e}")
 
-        if self.sideway_state == "STOPPING":
-            active_sd = [p for p in self.paper_engine.active_positions.values() if p.get("strategy_type") == "SIDEWAY_15M"]
-            if not active_sd:
-                self.sideway_state = "DISABLED"
-                self.sideway_mode_enabled = False
-                self.db.save_bot_state(
-                    self.bot_state, self.trading_mode, self.initial_capital, self.paper_engine.current_capital,
-                    self.paper_engine.leverage, 0, "DISABLED"
-                )
-
-        btc_price = pair_results.get("BTC-USDT-SWAP", {}).get("last_price", 65000.0)
-        eth_price = pair_results.get("ETH-USDT-SWAP", {}).get("last_price", 1950.0)
+        btc_price = pair_results.get("BTC-USDT-SWAP", {}).get("last_price", 64000.0)
+        eth_price = pair_results.get("ETH-USDT-SWAP", {}).get("last_price", 1900.0)
         btc_eval = pair_results.get("BTC-USDT-SWAP", {}).get("eval", {}).get("market_snapshot", {})
         btc_ema200_1d = btc_eval.get("ema200_4h", 63000.0)
         adx_4h = btc_eval.get("adx", 19.0)
-        atr_4h = btc_eval.get("atr_4h", 450.0)
+        atr_15m = btc_eval.get("atr_15m", 140.0)
         
         # 1. Run Core Spot Rebalance Process (70% Capital Allocation)
         btc_qty = (self.core_capital_70 * 0.40) / btc_price if btc_price > 0 else 0.04
@@ -443,17 +363,15 @@ class TraderBot:
         # 2. Run Satellite Futures Grid Process (30% Capital Allocation)
         bb_lower = btc_price * 0.97
         bb_upper = btc_price * 1.03
-        atr_15m = atr_4h * 0.35
         p_lower, p_upper, grid_n = self.grid_engine.determine_grid_bounds_and_density(bb_lower, bb_upper, atr_15m)
         grid_config = self.grid_engine.calculate_geometric_grid(p_lower, p_upper, grid_n)
-        oob_eval = self.grid_engine.evaluate_out_of_bounds("BTC-USDT-SWAP", btc_price, p_lower, p_upper, adx_4h, atr_4h)
+        oob_eval = self.grid_engine.evaluate_out_of_bounds("BTC-USDT-SWAP", btc_price, p_lower, p_upper, adx_4h, atr_15m)
         
-        # Fetch funding rate for Funding Rate Guard
         fr_data = self.client.get_funding_rate("BTC-USDT-SWAP") if hasattr(self.client, 'get_funding_rate') else {}
         funding_rate = fr_data.get("funding_rate", 0.0001)
         funding_eval = self.grid_engine.evaluate_funding_rate_guard(funding_rate)
         
-        # 3. Evaluate Dynamic 3-Tier Circuit Breakers & Peak Drawdown Tracker (Safe NoneType)
+        # 3. Circuit Breaker & Monitoring Telemetry
         current_total_equity = rebalance_telemetry["v_core"] + self.paper_engine.current_capital
         safe_peak = max(current_total_equity, self.peak_equity if self.peak_equity is not None else 0.0)
         self.peak_equity = safe_peak
@@ -462,12 +380,10 @@ class TraderBot:
             current_total_equity, self.peak_equity, btc_price, btc_ema200_1d, adx_4h, atr_15m, atr_15m
         )
 
-        # 4. Run Multi-Timeframe Active Monitoring Matrix Scan (Section 4)
         active_monitor_telemetry = self.active_monitor.evaluate_multi_timeframe_matrix(
             btc_price, current_total_equity, safe_peak, adx_4h, atr_15m, atr_15m, btc_ema200_1d, funding_rate
         )
 
-        # 5. Send Active Monitoring Telegram Notification matching user's custom template
         self.active_monitor.send_position_monitoring_telemetry(list(self.paper_engine.active_positions.values()), pair_results)
 
         paper_summary = self.paper_engine.get_summary()
@@ -485,7 +401,7 @@ class TraderBot:
             "pair_results": pair_results,
             "paper_summary": paper_summary,
             "core_satellite_architecture": {
-                "architecture": "Enterprise Core-Satellite Strategy (70% Spot Rebalance + 30% Futures Grid)",
+                "architecture": "Enterprise Core-Satellite Strategy (70% Spot Rebalance + 30% Futures 15m Scalping Grid)",
                 "total_equity_usd": round(current_total_equity, 2),
                 "peak_equity_usd": round(self.peak_equity, 2),
                 "drawdown_pct": cb_eval["drawdown_pct"],
@@ -499,15 +415,11 @@ class TraderBot:
                     "rebalance_actions": rebalance_telemetry["rebalance_actions"]
                 },
                 "satellite_engine_30pct": {
-                    "strategy": "Futures Geometric Grid (Bollinger Bands 20,2 4H)",
+                    "strategy": "15m Range Scalping & Geometric Grid",
                     "allocated_capital_usd": self.satellite_capital_30,
                     "grid_type": "GEOMETRIC",
                     "grid_status": grid_config["status"] if funding_eval["status"] == "NORMAL" else "PAUSED_FUNDING_GUARD",
-                    "grid_ratio_r": grid_config.get("ratio_r"),
-                    "g_profit_pct": grid_config.get("g_profit_pct"),
-                    "bounds": {"p_lower": p_lower, "p_upper": p_upper, "grid_count": grid_n},
-                    "out_of_bounds_status": oob_eval,
-                    "funding_rate_status": funding_eval
+                    "bounds": {"p_lower": p_lower, "p_upper": p_upper, "grid_count": grid_n}
                 },
                 "circuit_breaker_3level": cb_eval,
                 "multi_timeframe_monitoring": active_monitor_telemetry
@@ -517,6 +429,4 @@ class TraderBot:
         }
 
     def get_scan_interval_sec(self) -> int:
-        if self.sideway_mode_enabled or self.sideway_state in ["ACTIVE", "STOPPING"]:
-            return 900
-        return 1800
+        return 900

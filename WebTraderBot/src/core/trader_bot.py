@@ -41,7 +41,7 @@ class TraderBot:
             "ALGO-USDT-SWAP"
         ]
         self.resolution = resolution  # "240" (4H)
-        self.timeframe_str = "4h"
+        self.timeframe_str = "15m"
         self.client = OKXClient()
         self.risk_engine = RiskEngine()
         self.notifier = TelegramNotifier()
@@ -64,10 +64,9 @@ class TraderBot:
         self.trading_mode = "PAPER"  # "PAPER" or "LIVE"
         self.bot_state = "RUNNING"   # "RUNNING", "PAUSED", "ERROR"
         
-        # Sideway Engine State & Config
-        db_state = self.db.get_bot_state()
-        self.sideway_mode_enabled = bool(db_state.get("sideway_mode_enabled", 0))
-        self.sideway_state = db_state.get("sideway_state", "DISABLED")
+        # 15m Range Scalping Engine State (Default ACTIVE)
+        self.sideway_mode_enabled = True
+        self.sideway_state = "ACTIVE"
         
         self.last_signals_sent = {}  # { symbol: signal_key }
         self.symbol_lockouts = {}    # { symbol: lockout_until_timestamp }
@@ -452,87 +451,112 @@ class TraderBot:
         pair_results = {}
         for sym in self.symbols:
             try:
-                # 1. Evaluate 4H Swing Engine Signal (Primary Strategy Baseline)
-                candles_4h = self.client.get_candles(symbol=sym, resolution="240", limit=300)
-                if candles_4h:
-                    eval_res = self.evaluate_pair_signal(sym, candles_4h)
+                # 1. Primary Strategy: 15m Range Scalping Engine (Zone Touch & RSI Trigger)
+                candles_15m = self.client.get_candles(symbol=sym, resolution="15m", limit=50)
+                if candles_15m:
+                    last_price = candles_15m[-1]["close"]
+                    closes_15m = [c["close"] for c in candles_15m]
+                    sma20 = TechnicalIndicators.calculate_sma(closes_15m, 20)[-1]
+                    
+                    # Dynamic TP Update for active Sideway trades
+                    self.paper_engine.update_dynamic_sideway_tps(sym, sma20)
+
+                    sd_eval = self.evaluate_sideway_signal(sym, candles_15m)
                     pair_results[sym] = {
-                        "last_price": candles_4h[-1]["close"],
-                        "eval": eval_res
+                        "last_price": last_price,
+                        "eval": sd_eval
                     }
-                    if eval_res.get("signal") in ["LONG", "SHORT"]:
-                        # 1. Submit REAL order directly to OKX Demo API
-                        okx_order_res = self.client.place_market_order(
-                            symbol=sym,
-                            side=eval_res["signal"],
-                            sz=1.0,
-                            sl_price=eval_res["sl_price"],
-                            tp_price=eval_res["tp1_target"]
-                        )
-                        open_res = self.paper_engine.open_position(
-                            symbol=sym,
-                            side=eval_res["signal"],
-                            entry_price=eval_res["entry_price"],
-                            sl_price=eval_res["sl_price"],
-                            tp1_target=eval_res["tp1_target"],
-                            market_snapshot=eval_res["market_snapshot"],
-                            id_prefix=eval_res.get("id_prefix", "SW-")
-                        )
-                        if open_res.get("status") == "SUCCESS":
-                            opened_symbols_this_iteration.add(sym)
-                            self.notifier.send_message(
-                                f"<b>🚀 [OKX SWING 4H ORDER PLACED]</b>\n"
-                                f"Asset: <b>{sym}</b> ({eval_res['signal']})\n"
-                                f"Entry Price: ${eval_res['entry_price']:,.4f}\n"
-                                f"TP1: ${eval_res['tp1_target']:,.4f} | SL: ${eval_res['sl_price']:,.4f}\n"
-                                f"OKX Status: {okx_order_res.get('status')}"
-                            )
 
-                # 2. Evaluate 15m Sideway Engine Signal (If Enabled and no 4H Swing entry for same symbol)
-                if self.sideway_mode_enabled and self.sideway_state == "ACTIVE":
-                    if sym in opened_symbols_this_iteration or sym in self.paper_engine.active_positions:
-                        # Signal Deduplication Guard: Prioritize 4H Swing, suppress duplicate 15m Sideway entry
-                        continue
-
-                    candles_15m = self.client.get_candles(symbol=sym, resolution="15m", limit=50)
-                    if candles_15m:
-                        closes_15m = [c["close"] for c in candles_15m]
-                        sma20 = TechnicalIndicators.calculate_sma(closes_15m, 20)[-1]
-                        
-                        # Dynamic TP Update for active Sideway trades
-                        self.paper_engine.update_dynamic_sideway_tps(sym, sma20)
-
-                        sd_eval = self.evaluate_sideway_signal(sym, candles_15m)
-                        if sd_eval.get("signal") in ["LONG", "SHORT"]:
-                            # 1. Submit REAL order directly to OKX Demo API
-                            okx_sd_res = self.client.place_market_order(
-                                symbol=sym,
-                                side=sd_eval["signal"],
-                                sz=1.0,
-                                sl_price=sd_eval["sl_price"],
-                                tp_price=sd_eval["tp1_target"]
-                            )
-                            self.paper_engine.open_position(
-                                symbol=sym,
-                                side=sd_eval["signal"],
-                                entry_price=sd_eval["entry_price"],
-                                sl_price=sd_eval["sl_price"],
-                                tp1_target=sd_eval["tp1_target"],
-                                market_snapshot=sd_eval["market_snapshot"],
-                                id_prefix=sd_eval.get("id_prefix", "SD-")
-                            )
-                            self.notifier.send_message(
-                                f"<b>🚀 [OKX SCALPING 15M ORDER PLACED]</b>\n"
-                                f"Asset: <b>{sym}</b> ({sd_eval['signal']})\n"
-                                f"Entry Price: ${sd_eval['entry_price']:,.4f}\n"
-                                f"TP Target: ${sd_eval['tp1_target']:,.4f} | SL: ${sd_eval['sl_price']:,.4f}\n"
-                                f"OKX Status: {okx_sd_res.get('status')}"
-                            )
+                    if self.sideway_mode_enabled and self.sideway_state == "ACTIVE":
+                        if sym not in opened_symbols_this_iteration and sym not in self.paper_engine.active_positions:
+                            if sd_eval.get("signal") in ["LONG", "SHORT"]:
+                                side = sd_eval["signal"]
+                                # 1. Submit REAL order directly to OKX Demo API
+                                okx_sd_res = self.client.place_market_order(
+                                    symbol=sym,
+                                    side=side,
+                                    sz=1.0,
+                                    sl_price=sd_eval["sl_price"],
+                                    tp_price=sd_eval["tp1_target"]
+                                )
+                                self.paper_engine.open_position(
+                                    symbol=sym,
+                                    side=side,
+                                    entry_price=sd_eval["entry_price"],
+                                    sl_price=sd_eval["sl_price"],
+                                    tp1_target=sd_eval["tp1_target"],
+                                    market_snapshot=sd_eval["market_snapshot"],
+                                    id_prefix=sd_eval.get("id_prefix", "SD-")
+                                )
+                                opened_symbols_this_iteration.add(sym)
+                                self.notifier.send_message(
+                                    f"<b>🚀 [OKX SCALPING 15M ORDER PLACED]</b>\n"
+                                    f"Asset: <b>{sym}</b> ({side})\n"
+                                    f"Entry Price: ${sd_eval['entry_price']:,.4f}\n"
+                                    f"TP Target: ${sd_eval['tp1_target']:,.4f} | SL: ${sd_eval['sl_price']:,.4f}\n"
+                                    f"OKX Status: {okx_sd_res.get('status')}"
+                                )
 
             except Exception as e:
                 print(f"[TraderBot] Error scanning OKX pair {sym}: {e}")
 
-        # Update Paper Trading Positions check
+        # Update and Check Take Profit / Stop Loss triggers
+        try:
+            # Auto-close on OKX exchange when TP or SL is touched
+            for sym, pos in list(self.paper_engine.active_positions.items()):
+                curr_item = pair_results.get(sym, {})
+                curr_p = curr_item.get("last_price")
+                if not curr_p:
+                    continue
+                pos_side = pos.get("side", "LONG")
+                tp_target = pos.get("tp1_target", pos.get("tp_price", 0.0))
+                sl_target = pos.get("sl_price", 0.0)
+                
+                hit_tp = (curr_p >= tp_target if pos_side == "LONG" else curr_p <= tp_target) if tp_target > 0 else False
+                hit_sl = (curr_p <= sl_target if pos_side == "LONG" else curr_p >= sl_target) if sl_target > 0 else False
+                
+                if hit_tp or hit_sl:
+                    close_tag = "TAKE PROFIT (TP)" if hit_tp else "STOP LOSS (SL)"
+                    # Send Close order to OKX Exchange
+                    self.client.close_position_on_okx(sym, pos_side, td_mode="cross")
+                    
+                    pnl_val = (curr_p - pos["entry_price"]) * pos["qty"] if pos_side == "LONG" else (pos["entry_price"] - curr_p) * pos["qty"]
+                    pnl_pct = (pnl_val / pos.get("margin_required", 100.0)) * 100.0
+                    
+                    now_struct = time.localtime()
+                    trade_rec = {
+                        "id": f"SCALP-EXIT-{sym}-{int(time.time())}",
+                        "symbol": sym,
+                        "side": pos_side,
+                        "type": f"{pos_side} {close_tag}",
+                        "timeframe": "15m",
+                        "strategy_type": "SIDEWAY_15M",
+                        "leverage": pos.get("leverage", 3),
+                        "entry_price": pos["entry_price"],
+                        "exit_price": curr_p,
+                        "qty": pos["qty"],
+                        "net_pnl": round(pnl_val, 2),
+                        "pnl_pct": round(pnl_pct, 2),
+                        "holding_duration_formatted": "15m Scalp",
+                        "entry_time": pos.get("entry_time", time.strftime("%Y-%m-%d %H:%M:%S", now_struct)),
+                        "exit_time": time.strftime("%Y-%m-%d %H:%M:%S", now_struct),
+                        "day_of_week": time.strftime("%A", now_struct),
+                        "hour_of_day": now_struct.tm_hour
+                    }
+                    self.paper_engine.trade_history.insert(0, trade_rec)
+                    if sym in self.paper_engine.active_positions:
+                        del self.paper_engine.active_positions[sym]
+                    self.paper_engine._save_state()
+                    
+                    self.notifier.send_message(
+                        f"<b>🎯 [15M SCALPING {close_tag} EXECUTED]</b>\n"
+                        f"Asset: <b>{sym}</b> ({pos_side})\n"
+                        f"Exit Price: ${curr_p:,.4f}\n"
+                        f"Net PnL: <b>${pnl_val:,.2f} USD ({pnl_pct:+.2f}%)</b>"
+                    )
+
+        except Exception as e:
+            print(f"[TraderBot] Error updating 15m scalping positions: {e}")
         try:
             closed_trades = self.paper_engine.update_positions(pair_results)
             for closed in closed_trades:

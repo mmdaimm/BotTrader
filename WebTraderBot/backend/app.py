@@ -615,6 +615,88 @@ def trigger_test_order(symbol: str = Query("UNI-USDT-SWAP"), side: str = Query("
     except Exception as e:
         return {"status": "ERROR", "message": str(e)}
 
+@app.get("/api/close-legacy-positions")
+def close_legacy_positions():
+    """Close all open legacy OKX Demo positions, lock in profit, and activate 15m Scalping mode."""
+    results = []
+    total_net_pnl = 0.0
+    
+    pos_resp = bot.client.get_positions(instType="SWAP")
+    data_list = pos_resp.get("data", []) if pos_resp.get("code") == "0" else []
+    
+    for p in data_list:
+        p_sz = float(p.get("pos", 0.0) or 0.0)
+        if p_sz != 0:
+            sym = p.get("instId")
+            pos_side = str(p.get("posSide", "long")).upper()
+            if pos_side == "NET":
+                pos_side = "LONG" if p_sz > 0 else "SHORT"
+            upl = float(p.get("upl", 0.0) or 0.0)
+            total_net_pnl += upl
+            
+            close_res = bot.client.close_position_on_okx(sym, pos_side, td_mode="cross")
+            if close_res.get("status") != "SUCCESS":
+                close_res = bot.client.close_position_on_okx(sym, pos_side, td_mode="isolated")
+                
+            results.append({
+                "symbol": sym,
+                "side": pos_side,
+                "size": p_sz,
+                "unrealized_pnl": upl,
+                "close_result": close_res
+            })
+            
+            now_struct = time.localtime()
+            trade_rec = {
+                "id": f"CLOSED-LEGACY-{sym}-{int(time.time())}",
+                "symbol": sym,
+                "side": pos_side,
+                "type": f"{pos_side} MARKET EXIT (LEGACY 4H TRANSITION)",
+                "timeframe": "4h",
+                "strategy_type": "SWING_4H",
+                "leverage": int(float(p.get("lever", 3) or 3)),
+                "entry_price": float(p.get("avgPx", 0.0) or 0.0),
+                "exit_price": float(p.get("last", p.get("avgPx", 0.0)) or 0.0),
+                "qty": abs(p_sz),
+                "net_pnl": round(upl, 2),
+                "pnl_pct": round((upl / 100.0) * 100, 2),
+                "holding_duration_formatted": "Completed",
+                "entry_time": time.strftime("%Y-%m-%d %H:%M:%S", now_struct),
+                "exit_time": time.strftime("%Y-%m-%d %H:%M:%S", now_struct),
+                "day_of_week": time.strftime("%A", now_struct),
+                "hour_of_day": now_struct.tm_hour
+            }
+            bot.paper_engine.trade_history.insert(0, trade_rec)
+            try:
+                bot.db.record_trade_history(trade_rec)
+            except Exception:
+                pass
+
+    bot.paper_engine.active_positions.clear()
+    bot.paper_engine._save_state()
+    
+    bot.sideway_mode_enabled = True
+    bot.sideway_state = "ACTIVE"
+    bot.db.save_bot_state(
+        bot.bot_state, bot.trading_mode, bot.initial_capital,
+        bot.paper_engine.current_capital, bot.paper_engine.leverage,
+        1, "ACTIVE"
+    )
+
+    bot.notifier.send_message(
+        f"<b>🎯 [LEGACY POSITIONS CLOSED & 15M SCALPING ACTIVATED]</b>\n"
+        f"Closed Positions: <b>{len(results)} รายการ</b>\n"
+        f"Total PnL Realized: <b>+${total_net_pnl:,.2f} USD</b> 🟢\n"
+        f"New Active Mode: <b>15m Range Scalping (Zone Touch + RSI)</b> 🚀"
+    )
+
+    return {
+        "status": "SUCCESS",
+        "closed_count": len(results),
+        "total_pnl_realized_usd": round(total_net_pnl, 2),
+        "details": results
+    }
+
 if __name__ == "__main__":
     import uvicorn
     port = int(os.getenv("PORT", 8080))
