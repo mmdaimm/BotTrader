@@ -373,36 +373,61 @@ class OKXClient:
         except Exception as e:
             return {"code": "-1", "msg": str(e), "data": []}
 
-    def close_position_on_okx(self, symbol: str, side: str, td_mode: str = "cross") -> dict:
+    def close_position_on_okx(self, symbol: str, side: str, sz_contracts: int = None, td_mode: str = "cross") -> dict:
         self._resolve_keys()
         if not self.api_key or not self.api_secret or not self.passphrase:
             return {"status": "ERROR", "message": "OKX API Keys missing on server"}
 
         try:
-            path = "/api/v5/trade/close-position"
-            url = f"{self.host}{path}"
+            path_close = "/api/v5/trade/close-position"
+            url_close = f"{self.host}{path_close}"
             pos_side = "long" if side.upper() == "LONG" else "short"
             
-            last_resp = None
-            for ps in ["net", pos_side]:
-                for mgn in [td_mode, "cross", "isolated"]:
-                    try:
-                        payload = {
-                            "instId": symbol,
-                            "mgnMode": mgn,
-                            "posSide": ps
-                        }
-                        body = json.dumps(payload)
-                        headers = self._get_headers("POST", path, body)
-                        req = urllib.request.Request(url, data=body.encode('utf-8'), headers=headers, method="POST")
-                        with urllib.request.urlopen(req, timeout=5) as resp:
-                            data = json.loads(resp.read().decode())
-                            if data.get("code") == "0":
-                                return {"status": "SUCCESS", "symbol": symbol, "side": side, "posSide": ps, "raw_response": data}
-                            last_resp = data
-                    except Exception:
-                        pass
-            return {"status": "API_ERROR", "symbol": symbol, "message": last_resp.get("msg", "OKX Close failed") if last_resp else "Close position failed", "raw_response": last_resp}
+            # 1. Try Close-position without posSide (Net Mode) and with posSide (Long/Short Mode)
+            close_payloads = [
+                {"instId": symbol, "mgnMode": "cross"},
+                {"instId": symbol, "mgnMode": "isolated"},
+                {"instId": symbol, "mgnMode": "cross", "posSide": pos_side},
+                {"instId": symbol, "mgnMode": "isolated", "posSide": pos_side},
+                {"instId": symbol, "mgnMode": "cross", "posSide": "net"}
+            ]
+            
+            for p in close_payloads:
+                try:
+                    b_str = json.dumps(p)
+                    hdrs = self._get_headers("POST", path_close, b_str)
+                    req_obj = urllib.request.Request(url_close, data=b_str.encode('utf-8'), headers=hdrs, method="POST")
+                    with urllib.request.urlopen(req_obj, timeout=5) as resp:
+                        data = json.loads(resp.read().decode())
+                        if data.get("code") == "0":
+                            return {"status": "SUCCESS", "symbol": symbol, "side": side, "raw_response": data}
+                except Exception:
+                    pass
+
+            # 2. Fallback: Submit reduce-only market close order
+            path_ord = "/api/v5/trade/order"
+            url_ord = f"{self.host}{path_ord}"
+            close_side = "sell" if side.upper() == "LONG" else "buy"
+            sz_str = str(int(abs(sz_contracts))) if sz_contracts else "1"
+            
+            ord_payloads = [
+                {"instId": symbol, "tdMode": "cross", "side": close_side, "ordType": "market", "sz": sz_str, "reduceOnly": True},
+                {"instId": symbol, "tdMode": "isolated", "side": close_side, "ordType": "market", "sz": sz_str, "reduceOnly": True},
+                {"instId": symbol, "tdMode": "cross", "side": close_side, "posSide": pos_side, "ordType": "market", "sz": sz_str, "reduceOnly": True}
+            ]
+            for p in ord_payloads:
+                try:
+                    b_str = json.dumps(p)
+                    hdrs = self._get_headers("POST", path_ord, b_str)
+                    req_obj = urllib.request.Request(url_ord, data=b_str.encode('utf-8'), headers=hdrs, method="POST")
+                    with urllib.request.urlopen(req_obj, timeout=5) as resp:
+                        data = json.loads(resp.read().decode())
+                        if data.get("code") == "0":
+                            return {"status": "SUCCESS", "symbol": symbol, "side": side, "raw_response": data}
+                except Exception:
+                    pass
+
+            return {"status": "API_ERROR", "symbol": symbol, "message": "Failed to close position"}
         except Exception as e:
             return {"status": "ERROR", "message": str(e)}
 
