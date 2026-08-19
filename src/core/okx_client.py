@@ -233,7 +233,6 @@ class OKXClient:
                 res = _execute_order(clean_payload)
                 if res.get("status") == "SUCCESS":
                     res["stage_success"] = idx
-                    # Auto-submit attached Conditional TP/SL Algo Order to OKX Exchange
                     if (sl_price and float(sl_price) > 0) or (tp_price and float(tp_price) > 0):
                         algo_res = self.place_algo_tpsl_order(symbol, side, sz_contracts, sl_price=sl_price, tp_price=tp_price)
                         res["algo_order_res"] = algo_res
@@ -246,10 +245,6 @@ class OKXClient:
             return {"status": "ERROR", "message": str(e)}
 
     def place_algo_tpsl_order(self, symbol: str, side: str, sz_contracts: int, sl_price: float = None, tp_price: float = None, td_mode: str = "cross") -> dict:
-        """
-        Place Conditional TP/SL Algo Order directly on OKX Exchange API (POST /api/v5/trade/order-algo).
-        Appears under 'Algo Orders' / 'Pending TP/SL' tab on OKX Demo Web UI!
-        """
         self._resolve_keys()
         if not self.api_key or not self.api_secret or not self.passphrase:
             return {"status": "ERROR", "message": "OKX API Keys missing on server"}
@@ -290,11 +285,6 @@ class OKXClient:
             return {"status": "ERROR", "message": str(e)}
 
     def place_spot_order(self, symbol: str, side: str, sz: float, val_usd: float = None, ord_type: str = "market") -> dict:
-        """
-        Place Spot Market Order on OKX Demo / Live API (POST /api/v5/trade/order).
-        Supports Multi-Mode Robust Execution Pipeline (tdMode: 'cross' for Single-currency margin / 'cash' for Cash mode).
-        Handles quote_ccy (USDT) for market BUY and base_ccy for market SELL.
-        """
         self._resolve_keys()
         if not self.api_key or not self.api_secret or not self.passphrase:
             return {"status": "ERROR", "message": "OKX API Keys missing on server"}
@@ -310,7 +300,6 @@ class OKXClient:
 
             side_str = side.lower()
             
-            # Format quantity
             if "BTC" in spot_inst:
                 sz_coin_str = f"{float(sz):.4f}"
             elif "ETH" in spot_inst:
@@ -341,7 +330,6 @@ class OKXClient:
                             return {"status": "API_ERROR", "code": s_code, "message": info.get("sMsg", "Spot order failed"), "raw_response": d}
                     return {"status": "API_ERROR", "code": d.get("code"), "message": d.get("msg", "OKX Spot order failed"), "raw_response": d}
 
-            # Multi-Stage Robust Spot Execution Pipeline:
             stages = []
             if side_str == "buy":
                 if usdt_amt_str:
@@ -395,20 +383,26 @@ class OKXClient:
             url = f"{self.host}{path}"
             pos_side = "long" if side.upper() == "LONG" else "short"
             
-            payload = {
-                "instId": symbol,
-                "mgnMode": td_mode,
-                "posSide": pos_side
-            }
-            body = json.dumps(payload)
-            headers = self._get_headers("POST", path, body)
-            req = urllib.request.Request(url, data=body.encode('utf-8'), headers=headers, method="POST")
-            with urllib.request.urlopen(req, timeout=5) as resp:
-                data = json.loads(resp.read().decode())
-                if data.get("code") == "0":
-                    return {"status": "SUCCESS", "symbol": symbol, "side": side, "raw_response": data}
-                else:
-                    return {"status": "API_ERROR", "code": data.get("code"), "message": data.get("msg", "OKX Close position failed"), "raw_response": data}
+            last_resp = None
+            for ps in ["net", pos_side]:
+                for mgn in [td_mode, "cross", "isolated"]:
+                    try:
+                        payload = {
+                            "instId": symbol,
+                            "mgnMode": mgn,
+                            "posSide": ps
+                        }
+                        body = json.dumps(payload)
+                        headers = self._get_headers("POST", path, body)
+                        req = urllib.request.Request(url, data=body.encode('utf-8'), headers=headers, method="POST")
+                        with urllib.request.urlopen(req, timeout=5) as resp:
+                            data = json.loads(resp.read().decode())
+                            if data.get("code") == "0":
+                                return {"status": "SUCCESS", "symbol": symbol, "side": side, "posSide": ps, "raw_response": data}
+                            last_resp = data
+                    except Exception:
+                        pass
+            return {"status": "API_ERROR", "symbol": symbol, "message": last_resp.get("msg", "OKX Close failed") if last_resp else "Close position failed", "raw_response": last_resp}
         except Exception as e:
             return {"status": "ERROR", "message": str(e)}
 
